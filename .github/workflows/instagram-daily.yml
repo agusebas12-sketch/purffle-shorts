@@ -1,30 +1,21 @@
-
 name: Instagram Daily
 
 on:
   workflow_dispatch:
 
 jobs:
-  check-instagram-token:
+  probar-cloudinary:
     runs-on: ubuntu-latest
     steps:
-      - name: Comprobar token de Instagram
+      - name: Comprobar credenciales de Cloudinary
         env:
-          IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
         run: |
-          if [ -z "$IG_TOKEN" ]; then
-            echo "Falta el secreto INSTAGRAM_ACCESS_TOKEN."
+          if [ -z "$CLOUD_NAME" ] || [ -z "$API_KEY" ] || [ -z "$API_SECRET" ]; then
+            echo "Faltan secretos de Cloudinary."
             exit 1
           fi
 
-          response=$(curl -sS -G \
-            --data-urlencode "fields=user_id,username" \
-            --data-urlencode "access_token=$IG_TOKEN" \
-            "https://graph.instagram.com/me")
-
-          if echo "$response" | grep -q '"username"'; then
-            echo "Token aceptado por la API de Instagram."
-          else
-            echo "Instagram no aceptó el token. Revisa el tipo de token y los permisos."
-            exit 1
-          fi
+          echo "Los tres secretos de Cloudinary están configurados."
