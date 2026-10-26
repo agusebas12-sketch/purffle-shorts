@@ -8,6 +8,11 @@ jobs:
   probar-subida-cloudinary:
     runs-on: ubuntu-latest
     steps:
+      - name: Instalar ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
       - name: Crear vídeo de prueba
         run: |
           ffmpeg -f lavfi -i color=c=blue:s=320x240:d=2 \
@@ -16,12 +21,12 @@ jobs:
             -c:a aac video-prueba.mp4
 
       - name: Subir vídeo a Cloudinary
-        id: upload
         env:
           CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
         run: |
+          set -e
           response=$(curl -sS \
             --user "$API_KEY:$API_SECRET" \
             -F "file=@video-prueba.mp4" \
@@ -37,5 +42,4 @@ jobs:
           fi
 
           echo "La subida terminó correctamente."
-          echo "URL disponible para la siguiente etapa."
           
