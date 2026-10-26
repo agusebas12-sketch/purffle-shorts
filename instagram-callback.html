@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conexión con Instagram</title>
+</head>
+<body>
+  <h2>Conexión con Instagram</h2>
+  <p id="estado">Página preparada.</p>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const error = params.get("error");
+    const code = params.get("code");
+    const estado = document.getElementById("estado");
+
+    if (error) {
+      estado.textContent = "La autorización fue cancelada o rechazada.";
+    } else if (code) {
+      estado.textContent =
+        "Instagram devolvió un código. No lo compartas.";
+    } else {
+      estado.textContent =
+        "Página de retorno preparada. Instagram aún no está conectado.";
+    }
+  </script>
+</body>
+</html>
