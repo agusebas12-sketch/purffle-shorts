@@ -1,45 +1,41 @@
-
 name: Instagram Daily
 
 on:
   workflow_dispatch:
 
 jobs:
-  probar-subida-cloudinary:
+  comprobar-accesos:
     runs-on: ubuntu-latest
     steps:
-      - name: Instalar ffmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-
-      - name: Crear vídeo de prueba
-        run: |
-          ffmpeg -f lavfi -i color=c=blue:s=320x240:d=2 \
-            -f lavfi -i anullsrc=r=44100:cl=stereo \
-            -shortest -c:v libx264 -pix_fmt yuv420p \
-            -c:a aac video-prueba.mp4
-
-      - name: Subir vídeo a Cloudinary
+      - name: Comprobar Cloudinary
         env:
           CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
         run: |
           set -e
-          response=$(curl -sS \
+          code=$(curl -sS -o /tmp/cloudinary.json -w "%{http_code}" \
             --user "$API_KEY:$API_SECRET" \
-            -F "file=@video-prueba.mp4" \
-            -F "resource_type=video" \
-            "https://api.cloudinary.com/v1_1/$CLOUD_NAME/video/upload")
-
-          echo "$response" | jq '{public_id, resource_type, format, secure_url}'
-
-          url=$(echo "$response" | jq -r '.secure_url // empty')
-          if [ -z "$url" ]; then
-            echo "Error: Cloudinary no devolvió una URL."
+            "https://api.cloudinary.com/v1_1/$CLOUD_NAME/resources/video?max_results=1")
+          if [ "$code" = "200" ]; then
+            echo "Cloudinary: credenciales válidas."
+          else
+            echo "Cloudinary: la comprobación falló (HTTP $code)."
             exit 1
           fi
 
-          echo "La subida terminó correctamente."
-          
+      - name: Comprobar token de Instagram
+        env:
+          IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+        run: |
+          set -e
+          code=$(curl -sS -G -o /tmp/instagram.json -w "%{http_code}" \
+            --data-urlencode "fields=id,username" \
+            --data-urlencode "access_token=$IG_TOKEN" \
+            "https://graph.instagram.com/me")
+          if [ "$code" = "200" ]; then
+            echo "Instagram: token aceptado."
+          else
+            echo "Instagram: la comprobación falló (HTTP $code)."
+            exit 1
+          fi
