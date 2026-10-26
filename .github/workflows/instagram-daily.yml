@@ -1,17 +1,30 @@
+
 name: Instagram Daily
 
 on:
   workflow_dispatch:
 
 jobs:
-  check-secrets:
+  check-instagram-token:
     runs-on: ubuntu-latest
     steps:
-      - name: Comprobar configuracion
+      - name: Comprobar token de Instagram
         env:
-          APP_ID: ${{ secrets.INSTAGRAM_APP_ID }}
-          APP_SECRET: ${{ secrets.INSTAGRAM_APP_SECRET }}
+          IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
         run: |
-          test -n "$APP_ID" || exit 1
-          test -n "$APP_SECRET" || exit 1
-          echo "Los dos secretos estan configurados."
+          if [ -z "$IG_TOKEN" ]; then
+            echo "Falta el secreto INSTAGRAM_ACCESS_TOKEN."
+            exit 1
+          fi
+
+          response=$(curl -sS -G \
+            --data-urlencode "fields=user_id,username" \
+            --data-urlencode "access_token=$IG_TOKEN" \
+            "https://graph.instagram.com/me")
+
+          if echo "$response" | grep -q '"username"'; then
+            echo "Token aceptado por la API de Instagram."
+          else
+            echo "Instagram no aceptó el token. Revisa el tipo de token y los permisos."
+            exit 1
+          fi
