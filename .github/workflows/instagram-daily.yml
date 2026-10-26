@@ -1,4 +1,3 @@
-
 name: Instagram Daily
 
 on:
@@ -45,7 +44,7 @@ jobs:
         id: reel
         env:
           IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
-          IG_USER_ID: "17841424470871658"
+          IG_USER_ID: "17841424470871650"
           VIDEO_URL: ${{ steps.cloudinary.outputs.url }}
         run: |
           set -e
@@ -87,7 +86,7 @@ jobs:
       - name: Publicar Reel
         env:
           IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
-          IG_USER_ID: "17841424470871658"
+          IG_USER_ID: "17841424470871650"
           CREATION_ID: ${{ steps.reel.outputs.id }}
         run: |
           set -e
@@ -98,4 +97,3 @@ jobs:
           ID=$(python -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' <<< "$RESPONSE")
           test -n "$ID"
           echo "Reel publicado correctamente."
-          
