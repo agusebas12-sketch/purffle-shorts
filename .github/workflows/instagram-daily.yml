@@ -1,3 +1,4 @@
+
 name: Instagram Daily
 
 on:
@@ -22,6 +23,7 @@ jobs:
 
       - name: Subir vídeo a Cloudinary
         id: cloudinary
+        timeout-minutes: 4
         env:
           CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
@@ -29,28 +31,54 @@ jobs:
         run: |
           set -e
           VIDEO=$(find video -type f -name '*.mp4' -print -quit)
-          test -n "$VIDEO"
+          if [ -z "$VIDEO" ]; then
+            echo "No se encontró ningún archivo MP4."
+            exit 1
+          fi
 
-          RESPONSE=$(curl -fsS \
+          echo "Archivo encontrado:"
+          ls -lh "$VIDEO"
+          echo "Iniciando subida a Cloudinary..."
+
+          RESPONSE=$(curl -sS --connect-timeout 20 --max-time 180 \
             --user "$API_KEY:$API_SECRET" \
             -X POST \
             -F "file=@$VIDEO" \
             -F "resource_type=video" \
+            -w '\nHTTP_STATUS:%{http_code}' \
             "https://api.cloudinary.com/v1_1/$CLOUD_NAME/video/upload")
 
-          URL=$(python -c 'import json,sys; print(json.load(sys.stdin).get("secure_url",""))' <<< "$RESPONSE")
-          test -n "$URL"
+          HTTP_STATUS=$(printf '%s\n' "$RESPONSE" | sed -n 's/^HTTP_STATUS://p')
+          BODY=$(printf '%s\n' "$RESPONSE" | sed '/^HTTP_STATUS:/d')
+
+          echo "Código HTTP de Cloudinary: $HTTP_STATUS"
+          echo "Respuesta de Cloudinary:"
+          echo "$BODY"
+
+          if [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
+            echo "Error al subir el vídeo."
+            exit 1
+          fi
+
+          URL=$(python -c 'import json,sys; print(json.loads(sys.stdin.read()).get("secure_url",""))' <<< "$BODY")
+          if [ -z "$URL" ]; then
+            echo "Cloudinary no devolvió la URL del vídeo."
+            exit 1
+          fi
+
           echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Subida a Cloudinary completada."
 
       - name: Crear Reel en Instagram
         id: reel
+        timeout-minutes: 2
         env:
           IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
           IG_USER_ID: "17841424470871650"
           VIDEO_URL: ${{ steps.cloudinary.outputs.url }}
         run: |
           set -e
-          RESPONSE=$(curl -sS -G \
+          RESPONSE=$(curl -sS --connect-timeout 20 --max-time 60 -G \
             --data-urlencode "media_type=REELS" \
             --data-urlencode "video_url=$VIDEO_URL" \
             --data-urlencode "caption=Un misterio que todavía sorprende. ¿Qué opinas? #misterios #curiosidades #shorts" \
@@ -69,13 +97,14 @@ jobs:
           echo "id=$ID" >> "$GITHUB_OUTPUT"
 
       - name: Esperar procesamiento del Reel
+        timeout-minutes: 6
         env:
           IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
           CREATION_ID: ${{ steps.reel.outputs.id }}
         run: |
           set -e
           for i in $(seq 1 20); do
-            RESPONSE=$(curl -sS -G \
+            RESPONSE=$(curl -sS --connect-timeout 20 --max-time 60 -G \
               --data-urlencode "fields=status_code,status" \
               --data-urlencode "access_token=$IG_TOKEN" \
               "https://graph.facebook.com/v23.0/$CREATION_ID")
@@ -101,13 +130,14 @@ jobs:
           exit 1
 
       - name: Publicar Reel
+        timeout-minutes: 2
         env:
           IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
           IG_USER_ID: "17841424470871650"
           CREATION_ID: ${{ steps.reel.outputs.id }}
         run: |
           set -e
-          RESPONSE=$(curl -sS -G \
+          RESPONSE=$(curl -sS --connect-timeout 20 --max-time 60 -G \
             --data-urlencode "creation_id=$CREATION_ID" \
             --data-urlencode "access_token=$IG_TOKEN" \
             "https://graph.facebook.com/v23.0/$IG_USER_ID/media_publish")
@@ -122,3 +152,4 @@ jobs:
           fi
 
           echo "Reel publicado correctamente."
+          
