@@ -1,3 +1,4 @@
+
 name: Daily Spanish Short
 
 on:
@@ -16,6 +17,40 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Choose today's topic
+        id: topic
+        shell: bash
+        run: |
+          topics=(
+            "animales sorprendentes"
+            "misterios del océano"
+            "curiosidades científicas"
+            "misterios del espacio"
+            "civilizaciones antiguas"
+            "inventos que cambiaron el mundo"
+            "el cuerpo humano"
+            "psicología cotidiana"
+            "inteligencia artificial y tecnología"
+            "fenómenos naturales"
+            "enigmas históricos"
+            "lugares extraordinarios"
+            "experimentos científicos"
+            "mitos explicados por la ciencia"
+            "descubrimientos arqueológicos"
+            "ingeniería sorprendente"
+            "curiosidades sobre alimentos"
+            "récords extraordinarios"
+            "misterios de la Tierra"
+            "historias de supervivencia"
+          )
+
+          day=$(date -u +%j)
+          index=$(( (10#$day - 1) % ${#topics[@]} ))
+          topic="${topics[$index]}"
+
+          echo "topic=$topic" >> "$GITHUB_OUTPUT"
+          echo "Tema elegido: $topic"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -45,7 +80,7 @@ jobs:
           PUBLISH_TO: ""
           KEEP_VIDEOS: "true"
         run: |
-          purffle-shorts make --style facts --lang es --duration 40 --caption-style bold --no-upload
+          purffle-shorts make --style facts --lang es --duration 40 --caption-style bold --topic "${{ steps.topic.outputs.topic }}" --no-upload
 
       - name: Save video for download
         uses: actions/upload-artifact@v4
@@ -54,3 +89,4 @@ jobs:
           path: output_videos/**/*.mp4
           if-no-files-found: error
           retention-days: 7
+          
