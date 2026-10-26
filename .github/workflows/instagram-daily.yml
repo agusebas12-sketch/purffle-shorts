@@ -1,0 +1,13 @@
+name: Instagram Daily
+
+on:
+  schedule:
+    - cron: "0 9,18 * * *"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirmar ejecucion
+        run: echo "Flujo de Instagram preparado; publicacion aun no configurada."
