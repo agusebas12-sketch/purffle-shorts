@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  preparar-reel:
+  publicar-reel:
     runs-on: ubuntu-latest
     steps:
       - name: Descargar el Short de YouTube
@@ -21,13 +21,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: video
 
-      - name: Comprobar el archivo
-        run: |
-          set -e
-          find video -type f -name '*.mp4'
-          test -n "$(find video -type f -name '*.mp4' -print -quit)"
-
-      - name: Subir el vídeo a Cloudinary
+      - name: Subir vídeo a Cloudinary
+        id: cloudinary
         env:
           CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
@@ -35,17 +30,72 @@ jobs:
         run: |
           set -e
           VIDEO=$(find video -type f -name '*.mp4' -print -quit)
-          RESPONSE=$(curl -sS \
+          test -n "$VIDEO"
+          RESPONSE=$(curl -fsS \
             --user "$API_KEY:$API_SECRET" \
             -X POST \
             -F "file=@$VIDEO" \
             -F "resource_type=video" \
             "https://api.cloudinary.com/v1_1/$CLOUD_NAME/video/upload")
           URL=$(python -c 'import json,sys; print(json.load(sys.stdin).get("secure_url",""))' <<< "$RESPONSE")
-          if [ -z "$URL" ]; then
-            echo "No se pudo confirmar la subida a Cloudinary."
-            exit 1
-          fi
-          echo "Subida a Cloudinary completada."
-          echo "URL disponible para el siguiente paso."
+          test -n "$URL"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Crear Reel en Instagram
+        id: reel
+        env:
+          IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.INSTAGRAM_APP_ID }}
+          VIDEO_URL: ${{ steps.cloudinary.outputs.url }}
+        run: |
+          set -e
+          RESPONSE=$(curl -fsS -G \
+            --data-urlencode "media_type=REELS" \
+            --data-urlencode "video_url=$VIDEO_URL" \
+            --data-urlencode "caption=Un misterio que todavía sorprende. ¿Qué opinas? #misterios #curiosidades #shorts" \
+            --data-urlencode "access_token=$IG_TOKEN" \
+            "https://graph.facebook.com/v23.0/$IG_USER_ID/media")
+          ID=$(python -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' <<< "$RESPONSE")
+          test -n "$ID"
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+
+      - name: Esperar procesamiento del Reel
+        env:
+          IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          CREATION_ID: ${{ steps.reel.outputs.id }}
+        run: |
+          set -e
+          for i in $(seq 1 20); do
+            RESPONSE=$(curl -fsS -G \
+              --data-urlencode "fields=status_code,status" \
+              --data-urlencode "access_token=$IG_TOKEN" \
+              "https://graph.facebook.com/v23.0/$CREATION_ID")
+            STATUS=$(python -c 'import json,sys; print(json.load(sys.stdin).get("status_code",""))' <<< "$RESPONSE")
+            if [ "$STATUS" = "FINISHED" ]; then
+              echo "Instagram terminó de procesar el Reel."
+              exit 0
+            fi
+            if [ "$STATUS" = "ERROR" ]; then
+              echo "Instagram informó un error de procesamiento."
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "Instagram todavía no terminó de procesar el vídeo."
+          exit 1
+
+      - name: Publicar Reel
+        env:
+          IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.INSTAGRAM_APP_ID }}
+          CREATION_ID: ${{ steps.reel.outputs.id }}
+        run: |
+          set -e
+          RESPONSE=$(curl -fsS -G \
+            --data-urlencode "creation_id=$CREATION_ID" \
+            --data-urlencode "access_token=$IG_TOKEN" \
+            "https://graph.facebook.com/v23.0/$IG_USER_ID/media_publish")
+          ID=$(python -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' <<< "$RESPONSE")
+          test -n "$ID"
+          echo "Reel publicado correctamente."
           
