@@ -1,0 +1,56 @@
+name: Daily Spanish Short
+
+on:
+  schedule:
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+
+      - name: Install PurffleShorts
+        run: python -m pip install .
+
+      - name: Generate Spanish Short
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          LLM_PROVIDER: gemini
+          LLM_MODEL: gemini-3.8-flash
+          LANGUAGE: es
+          SCRIPT_STYLE: facts
+          TARGET_SECONDS: "40"
+          CAPTION_STYLE: bold
+          VISUAL_SOURCES: pixabay
+          UPLOAD: "false"
+          PUBLISH_TO: ""
+          KEEP_VIDEOS: "true"
+        run: |
+          purffle-shorts make --topic "Un misterio sorprendente sobre el futuro" --style facts --lang es --duration 40 --caption-style bold --no-upload
+
+      - name: Save video for download
+        uses: actions/upload-artifact@v4
+        with:
+          name: short-${{ github.run_number }}
+          path: output_videos/**/*.mp4
+          if-no-files-found: error
+          retention-days: 7
