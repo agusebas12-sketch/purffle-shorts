@@ -62,10 +62,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg fonts-dejavu-core
 
+      - name: Restore YouTube authorization
+        env:
+          YOUTUBE_TOKEN_JSON_B64: ${{ secrets.YOUTUBE_TOKEN_JSON_B64 }}
+        run: |
+          test -n "$YOUTUBE_TOKEN_JSON_B64" || { echo "Falta el secreto de YouTube"; exit 1; }
+          printf '%s' "$YOUTUBE_TOKEN_JSON_B64" | base64 --decode > "$RUNNER_TEMP/token.json"
+          python -m json.tool "$RUNNER_TEMP/token.json" > /dev/null
+          chmod 600 "$RUNNER_TEMP/token.json"
+
       - name: Install PurffleShorts
         run: python -m pip install .
 
-      - name: Generate Spanish Short
+      - name: Generate and upload Spanish Short
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
@@ -76,11 +85,12 @@ jobs:
           TARGET_SECONDS: "40"
           CAPTION_STYLE: bold
           VISUAL_SOURCES: pixabay
-          UPLOAD: "false"
-          PUBLISH_TO: ""
+          UPLOAD: "true"
+          PUBLISH_TO: "youtube"
+          YT_TOKEN_FILE: ${{ runner.temp }}/token.json
           KEEP_VIDEOS: "true"
         run: |
-          purffle-shorts make --style facts --lang es --duration 40 --caption-style bold --topic "${{ steps.topic.outputs.topic }}" --no-upload
+          purffle-shorts make --style facts --lang es --duration 40 --caption-style bold --topic "${{ steps.topic.outputs.topic }}"
 
       - name: Save video for download
         uses: actions/upload-artifact@v4
