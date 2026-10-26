@@ -1,4 +1,3 @@
-
 name: Daily Spanish Short
 
 on:
@@ -46,7 +45,7 @@ jobs:
           PUBLISH_TO: ""
           KEEP_VIDEOS: "true"
         run: |
-          purffle-shorts make --topic "Un misterio sorprendente sobre el futuro" --style facts --lang es --duration 40 --caption-style bold --no-upload
+          purffle-shorts make --style facts --lang es --duration 40 --caption-style bold --no-upload
 
       - name: Save video for download
         uses: actions/upload-artifact@v4
@@ -55,4 +54,3 @@ jobs:
           path: output_videos/**/*.mp4
           if-no-files-found: error
           retention-days: 7
-          
