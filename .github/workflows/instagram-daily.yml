@@ -1,41 +1,51 @@
+
 name: Instagram Daily
 
 on:
   workflow_dispatch:
 
+permissions:
+  actions: read
+  contents: read
+
 jobs:
-  comprobar-accesos:
+  preparar-reel:
     runs-on: ubuntu-latest
     steps:
-      - name: Comprobar Cloudinary
+      - name: Descargar el Short de YouTube
+        uses: actions/download-artifact@v4
+        with:
+          name: short-7
+          repository: agusebas12-sketch/purffle-shorts
+          run-id: 40350058912
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: video
+
+      - name: Comprobar el archivo
+        run: |
+          set -e
+          find video -type f -name '*.mp4'
+          test -n "$(find video -type f -name '*.mp4' -print -quit)"
+
+      - name: Subir el vídeo a Cloudinary
         env:
           CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
         run: |
           set -e
-          code=$(curl -sS -o /tmp/cloudinary.json -w "%{http_code}" \
+          VIDEO=$(find video -type f -name '*.mp4' -print -quit)
+          RESPONSE=$(curl -sS \
             --user "$API_KEY:$API_SECRET" \
-            "https://api.cloudinary.com/v1_1/$CLOUD_NAME/resources/video?max_results=1")
-          if [ "$code" = "200" ]; then
-            echo "Cloudinary: credenciales válidas."
-          else
-            echo "Cloudinary: la comprobación falló (HTTP $code)."
+            -X POST \
+            -F "file=@$VIDEO" \
+            -F "resource_type=video" \
+            "https://api.cloudinary.com/v1_1/$CLOUD_NAME/video/upload")
+          URL=$(python -c 'import json,sys; print(json.load(sys.stdin).get("secure_url",""))' <<< "$RESPONSE")
+          if [ -z "$URL" ]; then
+            echo "No se pudo confirmar la subida a Cloudinary."
             exit 1
           fi
-
-      - name: Comprobar token de Instagram
-        env:
-          IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
-        run: |
-          set -e
-          code=$(curl -sS -G -o /tmp/instagram.json -w "%{http_code}" \
-            --data-urlencode "fields=id,username" \
-            --data-urlencode "access_token=$IG_TOKEN" \
-            "https://graph.instagram.com/me")
-          if [ "$code" = "200" ]; then
-            echo "Instagram: token aceptado."
-          else
-            echo "Instagram: la comprobación falló (HTTP $code)."
-            exit 1
-          fi
+          echo "Subida a Cloudinary completada."
+          echo "URL disponible para el siguiente paso."
+          
