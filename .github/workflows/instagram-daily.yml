@@ -1,13 +1,17 @@
 name: Instagram Daily
 
 on:
-  schedule:
-    - cron: "0 9,18 * * *"
   workflow_dispatch:
 
 jobs:
-  check:
+  check-secrets:
     runs-on: ubuntu-latest
     steps:
-      - name: Confirmar ejecucion
-        run: echo "Flujo de Instagram preparado; publicacion aun no configurada."
+      - name: Comprobar configuracion
+        env:
+          APP_ID: ${{ secrets.INSTAGRAM_APP_ID }}
+          APP_SECRET: ${{ secrets.INSTAGRAM_APP_SECRET }}
+        run: |
+          test -n "$APP_ID" || exit 1
+          test -n "$APP_SECRET" || exit 1
+          echo "Los dos secretos estan configurados."
