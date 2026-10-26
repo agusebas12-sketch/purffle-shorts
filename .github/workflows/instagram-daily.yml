@@ -30,12 +30,14 @@ jobs:
           set -e
           VIDEO=$(find video -type f -name '*.mp4' -print -quit)
           test -n "$VIDEO"
+
           RESPONSE=$(curl -fsS \
             --user "$API_KEY:$API_SECRET" \
             -X POST \
             -F "file=@$VIDEO" \
             -F "resource_type=video" \
             "https://api.cloudinary.com/v1_1/$CLOUD_NAME/video/upload")
+
           URL=$(python -c 'import json,sys; print(json.load(sys.stdin).get("secure_url",""))' <<< "$RESPONSE")
           test -n "$URL"
           echo "url=$URL" >> "$GITHUB_OUTPUT"
@@ -48,14 +50,22 @@ jobs:
           VIDEO_URL: ${{ steps.cloudinary.outputs.url }}
         run: |
           set -e
-          RESPONSE=$(curl -fsS -G \
+          RESPONSE=$(curl -sS -G \
             --data-urlencode "media_type=REELS" \
             --data-urlencode "video_url=$VIDEO_URL" \
             --data-urlencode "caption=Un misterio que todavía sorprende. ¿Qué opinas? #misterios #curiosidades #shorts" \
             --data-urlencode "access_token=$IG_TOKEN" \
             "https://graph.facebook.com/v23.0/$IG_USER_ID/media")
+
+          echo "Respuesta de Instagram:"
+          echo "$RESPONSE"
+
           ID=$(python -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' <<< "$RESPONSE")
-          test -n "$ID"
+          if [ -z "$ID" ]; then
+            echo "No se pudo crear el Reel."
+            exit 1
+          fi
+
           echo "id=$ID" >> "$GITHUB_OUTPUT"
 
       - name: Esperar procesamiento del Reel
@@ -65,21 +75,28 @@ jobs:
         run: |
           set -e
           for i in $(seq 1 20); do
-            RESPONSE=$(curl -fsS -G \
+            RESPONSE=$(curl -sS -G \
               --data-urlencode "fields=status_code,status" \
               --data-urlencode "access_token=$IG_TOKEN" \
               "https://graph.facebook.com/v23.0/$CREATION_ID")
+
+            echo "Estado del procesamiento: $RESPONSE"
+
             STATUS=$(python -c 'import json,sys; print(json.load(sys.stdin).get("status_code",""))' <<< "$RESPONSE")
+
             if [ "$STATUS" = "FINISHED" ]; then
               echo "Instagram terminó de procesar el Reel."
               exit 0
             fi
+
             if [ "$STATUS" = "ERROR" ]; then
               echo "Instagram informó un error de procesamiento."
               exit 1
             fi
+
             sleep 15
           done
+
           echo "Instagram todavía no terminó de procesar el vídeo."
           exit 1
 
@@ -90,10 +107,18 @@ jobs:
           CREATION_ID: ${{ steps.reel.outputs.id }}
         run: |
           set -e
-          RESPONSE=$(curl -fsS -G \
+          RESPONSE=$(curl -sS -G \
             --data-urlencode "creation_id=$CREATION_ID" \
             --data-urlencode "access_token=$IG_TOKEN" \
             "https://graph.facebook.com/v23.0/$IG_USER_ID/media_publish")
+
+          echo "Respuesta de publicación:"
+          echo "$RESPONSE"
+
           ID=$(python -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' <<< "$RESPONSE")
-          test -n "$ID"
+          if [ -z "$ID" ]; then
+            echo "Instagram no confirmó la publicación."
+            exit 1
+          fi
+
           echo "Reel publicado correctamente."
