@@ -1,3 +1,4 @@
+
 name: Daily Spanish Short
 
 on:
@@ -35,7 +36,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           LLM_PROVIDER: gemini
-          LLM_MODEL: gemini-3.8-flash
+          LLM_MODEL: gemini-2.5-flash
           LANGUAGE: es
           SCRIPT_STYLE: facts
           TARGET_SECONDS: "40"
@@ -54,3 +55,4 @@ jobs:
           path: output_videos/**/*.mp4
           if-no-files-found: error
           retention-days: 7
+          
