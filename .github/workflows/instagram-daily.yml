@@ -1,4 +1,3 @@
-
 name: Instagram Daily
 
 on:
@@ -74,7 +73,7 @@ jobs:
         timeout-minutes: 2
         env:
           IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
-          IG_USER_ID: "17841424470871650"
+          IG_USER_ID: "17841424470871658"
           VIDEO_URL: ${{ steps.cloudinary.outputs.url }}
         run: |
           set -e
@@ -133,7 +132,7 @@ jobs:
         timeout-minutes: 2
         env:
           IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
-          IG_USER_ID: "17841424470871650"
+          IG_USER_ID: "17841424470871658"
           CREATION_ID: ${{ steps.reel.outputs.id }}
         run: |
           set -e
@@ -152,4 +151,3 @@ jobs:
           fi
 
           echo "Reel publicado correctamente."
-          
