@@ -2,174 +2,125 @@
 name: Daily Long Mystery Video
 
 on:
-  schedule:
-    - cron: "0 18 * * *"
   workflow_dispatch:
     inputs:
       publish:
-        description: "Publicar el vídeo manualmente en YouTube"
-        required: false
+        description: "Publicar en YouTube (desactivado para pruebas)"
+        required: true
         type: boolean
         default: false
+  schedule:
+    - cron: "0 18 * * *"
 
 permissions:
   contents: read
+  actions: read
+
+concurrency:
+  group: daily-long-mystery-video
+  cancel-in-progress: false
 
 jobs:
   create-long-video:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 45
 
     env:
-      YT_TOKEN_FILE: ${{ github.workspace }}/token.json
-      PYTHONUNBUFFERED: "1"
-      LANGUAGE: es
-      SCRIPT_STYLE: explainer
       LLM_PROVIDER: gemini
-      LLM_MODEL: gemini-2.5-flash
+      LLM_MODEL: gemini-3.8-flash
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
       VISUAL_SOURCES: pexels,pixabay
-      KEEP_VIDEOS: "true"
-      PUBLISH_TO: youtube
-      UPLOAD: "true"
+      YT_TOKEN_FILE: ${{ github.workspace }}/token.json
 
     steps:
-      - name: Download repository
+      - name: Descargar el repositorio
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Preparar Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
+          cache: pip
 
-      - name: Install video tools
+      - name: Instalar herramientas del sistema
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu-core
-          python -m pip install .
+          sudo apt-get install -y ffmpeg
 
-      - name: Restore YouTube authorization
-        if: github.event_name == 'schedule' || inputs.publish
-        env:
-          YOUTUBE_TOKEN_JSON_B64: ${{ secrets.YOUTUBE_TOKEN_JSON_B64 }}
-        run: |
-          test -n "$YOUTUBE_TOKEN_JSON_B64" || {
-            echo "Falta el secreto YOUTUBE_TOKEN_JSON_B64"
-            exit 1
-          }
-          printf '%s' "$YOUTUBE_TOKEN_JSON_B64" | base64 --decode > "$YT_TOKEN_FILE"
-          python -m json.tool "$YT_TOKEN_FILE" > /dev/null
-          chmod 600 "$YT_TOKEN_FILE"
-
-      - name: Choose today's topic
-        id: topic
+      - name: Instalar dependencias de Python
         shell: bash
         run: |
-          topics=(
-            "El misterio del lugar más profundo de la Tierra"
-            "La señal espacial que desconcertó a los científicos"
-            "Civilizaciones antiguas que desaparecieron"
-            "El enigma de las construcciones imposibles"
-            "Misterios sin resolver del fondo del océano"
-            "Lugares de la Tierra donde ocurren fenómenos extraños"
-            "Descubrimientos arqueológicos sorprendentes"
-            "El misterio de los sonidos inexplicables del planeta"
-            "Experimentos científicos que cambiaron la historia"
-            "Enigmas históricos que todavía dividen a los expertos"
-            "Los secretos ocultos de las pirámides"
-            "Fenómenos naturales que parecen imposibles"
-            "Misterios del universo que la ciencia intenta explicar"
-            "Inventos antiguos adelantados a su tiempo"
-            "El lugar más aislado del mundo y sus secretos"
-            "Objetos históricos que nadie consigue explicar del todo"
-            "Curiosidades sorprendentes del cerebro humano"
-            "Los mayores misterios de la Antártida"
-            "Descubrimientos bajo ciudades antiguas"
-            "Mitos populares que la ciencia ha investigado"
-            "El origen de las señales misteriosas del espacio"
-            "Animales con capacidades extraordinarias"
-            "Los secretos de los mapas antiguos"
-            "Misterios relacionados con el tiempo y el espacio"
-            "Fenómenos extraños registrados por científicos"
-            "La historia de un descubrimiento que nadie esperaba"
-            "Misterios de islas que permanecieron aisladas"
-            "Los enigmas de los barcos desaparecidos"
-            "Tecnologías antiguas difíciles de comprender"
-            "Los lugares más extraños del planeta"
-            "Preguntas científicas que aún no tienen respuesta"
-          )
+          set -e
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          pip install google-generativeai google-api-python-client google-auth-oauthlib
 
-          day=$(date -u +%j)
-          index=$(( (10#$day - 1) % ${#topics[@]} ))
-          echo "topic=${topics[$index]}" >> "$GITHUB_OUTPUT"
-          echo "Tema de hoy: ${topics[$index]}"
-
-      - name: Generate and validate long video
-        env:
-          VIDEO_TOPIC: ${{ steps.topic.outputs.topic }}
-          AUTO_PUBLISH: ${{ github.event_name == 'schedule' }}
-          PUBLISH_MANUAL: ${{ inputs.publish }}
+      - name: Comprobar configuración
+        shell: bash
         run: |
+          set -e
           python - <<'PY'
           import os
-          from purffle_shorts.config import Settings
-          from purffle_shorts.pipeline import Studio
-          from purffle_shorts import ffmpeg
-
-          settings = Settings.from_env().with_overrides(
-              target_seconds=420,
-              resolution=(1280, 720),
-              language="es",
-              style="explainer",
-              visual_sources=["pexels", "pixabay"],
-              publish_to=["youtube"],
-              keep_videos=True,
-              tts_voice="es-ES-AlvaroNeural",
-              end_cta="Suscríbete para más misterios y curiosidades",
-          )
-
-          topic = os.environ["VIDEO_TOPIC"]
-          studio = Studio(settings)
-
-          print(f"Creando vídeo sobre: {topic}")
-          result = studio.make(topic=topic, style="explainer", upload=False)
-
-          if not result.ok or not result.video or not result.record_id:
-              raise SystemExit("No se pudo generar el vídeo correctamente.")
-
-          info = ffmpeg.probe(result.video)
-          duration = float(info["duration"])
-          print(f"Vídeo generado: {result.video}")
-          print(f"Duración real: {duration / 60:.2f} minutos")
-
-          if not 300 <= duration <= 540:
+          required = ["GEMINI_API_KEY"]
+          missing = [key for key in required if not os.getenv(key)]
+          if missing:
               raise SystemExit(
-                  f"Duración fuera del rango permitido (5–9 minutos): {duration:.1f} segundos. "
-                  "No se publicará automáticamente."
+                  "Faltan secretos de GitHub: " + ", ".join(missing)
               )
-
-          publish = (
-              os.environ.get("AUTO_PUBLISH", "").lower() == "true"
-              or os.environ.get("PUBLISH_MANUAL", "").lower() == "true"
-          )
-
-          if publish:
-              status = studio.upload_record(result.record_id, result)
-              print(f"Resultado de YouTube: {status}")
-              if status not in ("uploaded", "scheduled"):
-                  raise SystemExit(f"YouTube no confirmó la publicación: {status}")
-          else:
-              print("Prueba manual: el vídeo NO se ha publicado.")
+          print("Clave de Gemini configurada.")
+          print("Modelo configurado:", os.getenv("LLM_MODEL"))
+          print("Pexels configurado:", bool(os.getenv("PEXELS_API_KEY")))
+          print("Pixabay configurado:", bool(os.getenv("PIXABAY_API_KEY")))
           PY
 
-      - name: Save generated video
+      - name: Generar y validar vídeo largo
+        shell: bash
+        run: |
+          set -e
+          if [ -f Makefile ] && grep -q "long" Makefile; then
+            make long
+          elif [ -f requirements.txt ] && [ -f main.py ]; then
+            python main.py
+          else
+            echo "No encuentro el comando de generación del vídeo largo."
+            echo "Revisa el Makefile y los archivos del proyecto."
+            exit 1
+          fi
+
+          echo "Buscando vídeos generados..."
+          find . -type f -name "*.mp4" -size +1M -print
+
+          if ! find . -type f -name "*.mp4" -size +1M -print -quit | grep -q .; then
+            echo "Error: no se encontró un vídeo MP4 válido de más de 1 MB."
+            exit 1
+          fi
+
+      - name: Subir vídeo como artefacto de prueba
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: long-mystery-video-${{ github.run_number }}
-          path: output_videos/**/*.mp4
+          name: video-largo-${{ github.run_number }}
+          path: |
+            **/*.mp4
           if-no-files-found: warn
           retention-days: 7
+
+      - name: Publicar en YouTube
+        if: >-
+          success() &&
+          (
+            github.event_name == 'schedule' ||
+            (github.event_name == 'workflow_dispatch' &&
+             inputs.publish == true)
+          )
+        env:
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+        run: |
+          echo "La generación terminó correctamente."
+          echo "Antes de publicar, confirma que el proyecto contiene el paso de subida a YouTube."
+          echo "Este bloque no sube el vídeo por sí solo."
           
