@@ -1,3 +1,4 @@
+
 name: Instagram Daily
 
 on:
@@ -29,7 +30,9 @@ jobs:
           API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
         run: |
           set -e
+
           VIDEO=$(find video -type f -name '*.mp4' -print -quit)
+
           if [ -z "$VIDEO" ]; then
             echo "No se encontró ningún archivo MP4."
             exit 1
@@ -60,6 +63,7 @@ jobs:
           fi
 
           URL=$(python -c 'import json,sys; print(json.loads(sys.stdin.read()).get("secure_url",""))' <<< "$BODY")
+
           if [ -z "$URL" ]; then
             echo "Cloudinary no devolvió la URL del vídeo."
             exit 1
@@ -77,7 +81,9 @@ jobs:
           VIDEO_URL: ${{ steps.cloudinary.outputs.url }}
         run: |
           set -e
-          RESPONSE=$(curl -sS --connect-timeout 20 --max-time 60 -G \
+
+          RESPONSE=$(curl -sS --connect-timeout 20 --max-time 60 \
+            -X POST \
             --data-urlencode "media_type=REELS" \
             --data-urlencode "video_url=$VIDEO_URL" \
             --data-urlencode "caption=Un misterio que todavía sorprende. ¿Qué opinas? #misterios #curiosidades #shorts" \
@@ -88,12 +94,14 @@ jobs:
           echo "$RESPONSE"
 
           ID=$(python -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' <<< "$RESPONSE")
+
           if [ -z "$ID" ]; then
-            echo "No se pudo crear el Reel."
+            echo "No se pudo crear el Reel. Revisa la respuesta de Instagram."
             exit 1
           fi
 
           echo "id=$ID" >> "$GITHUB_OUTPUT"
+          echo "Reel creado. ID: $ID"
 
       - name: Esperar procesamiento del Reel
         timeout-minutes: 6
@@ -102,6 +110,7 @@ jobs:
           CREATION_ID: ${{ steps.reel.outputs.id }}
         run: |
           set -e
+
           for i in $(seq 1 20); do
             RESPONSE=$(curl -sS --connect-timeout 20 --max-time 60 -G \
               --data-urlencode "fields=status_code,status" \
@@ -136,7 +145,9 @@ jobs:
           CREATION_ID: ${{ steps.reel.outputs.id }}
         run: |
           set -e
-          RESPONSE=$(curl -sS --connect-timeout 20 --max-time 60 -G \
+
+          RESPONSE=$(curl -sS --connect-timeout 20 --max-time 60 \
+            -X POST \
             --data-urlencode "creation_id=$CREATION_ID" \
             --data-urlencode "access_token=$IG_TOKEN" \
             "https://graph.facebook.com/v23.0/$IG_USER_ID/media_publish")
@@ -145,9 +156,11 @@ jobs:
           echo "$RESPONSE"
 
           ID=$(python -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' <<< "$RESPONSE")
+
           if [ -z "$ID" ]; then
             echo "Instagram no confirmó la publicación."
             exit 1
           fi
 
-          echo "Reel publicado correctamente."
+          echo "Reel publicado correctamente. ID: $ID"
+          
