@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: "Publicar en YouTube (desactivado para pruebas)"
+        description: "Prueba: mantener desactivada la publicación"
         required: true
         type: boolean
         default: false
@@ -31,8 +31,7 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-      VISUAL_SOURCES: pexels,pixabay
-      YT_TOKEN_FILE: ${{ github.workspace }}/token.json
+      PYTHONUNBUFFERED: "1"
 
     steps:
       - name: Descargar el repositorio
@@ -41,86 +40,65 @@ jobs:
       - name: Preparar Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
 
-      - name: Instalar herramientas del sistema
+      - name: Instalar FFmpeg
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
 
-      - name: Instalar dependencias de Python
-        shell: bash
+      - name: Instalar PurffleShorts
         run: |
-          set -e
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
-          pip install google-generativeai google-api-python-client google-auth-oauthlib
+          python -m pip install .
 
       - name: Comprobar configuración
         shell: bash
         run: |
           set -e
-          python - <<'PY'
-          import os
-          required = ["GEMINI_API_KEY"]
-          missing = [key for key in required if not os.getenv(key)]
-          if missing:
-              raise SystemExit(
-                  "Faltan secretos de GitHub: " + ", ".join(missing)
-              )
-          print("Clave de Gemini configurada.")
-          print("Modelo configurado:", os.getenv("LLM_MODEL"))
-          print("Pexels configurado:", bool(os.getenv("PEXELS_API_KEY")))
-          print("Pixabay configurado:", bool(os.getenv("PIXABAY_API_KEY")))
-          PY
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "Error: falta el secreto GEMINI_API_KEY."
+            exit 1
+          fi
+          echo "Clave de Gemini configurada."
+          echo "Modelo: $LLM_MODEL"
+          echo "Pixabay configurado: $([ -n "$PIXABAY_API_KEY" ] && echo sí || echo no)"
 
-      - name: Generar y validar vídeo largo
+      - name: Generar vídeo de 170 segundos
         shell: bash
         run: |
           set -e
-          if [ -f Makefile ] && grep -q "long" Makefile; then
-            make long
-          elif [ -f requirements.txt ] && [ -f main.py ]; then
-            python main.py
-          else
-            echo "No encuentro el comando de generación del vídeo largo."
-            echo "Revisa el Makefile y los archivos del proyecto."
+          purffle-shorts make \
+            --style explainer \
+            --lang es \
+            --duration 170 \
+            --aspect 16:9 \
+            --visuals pixabay \
+            --no-upload \
+            --verbose \
+            --topic "El origen de las señales misteriosas del espacio"
+
+      - name: Validar vídeo generado
+        shell: bash
+        run: |
+          set -e
+          echo "Buscando el vídeo generado..."
+          find output_videos -type f -name "*.mp4" -size +1M -print
+
+          if ! find output_videos -type f -name "*.mp4" -size +1M -print -quit | grep -q .; then
+            echo "Error: no se encontró un vídeo MP4 válido."
             exit 1
           fi
 
-          echo "Buscando vídeos generados..."
-          find . -type f -name "*.mp4" -size +1M -print
+          echo "Vídeo encontrado correctamente."
 
-          if ! find . -type f -name "*.mp4" -size +1M -print -quit | grep -q .; then
-            echo "Error: no se encontró un vídeo MP4 válido de más de 1 MB."
-            exit 1
-          fi
-
-      - name: Subir vídeo como artefacto de prueba
+      - name: Guardar vídeo para descargar
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: video-largo-${{ github.run_number }}
-          path: |
-            **/*.mp4
+          path: output_videos/**/*.mp4
           if-no-files-found: warn
           retention-days: 7
-
-      - name: Publicar en YouTube
-        if: >-
-          success() &&
-          (
-            github.event_name == 'schedule' ||
-            (github.event_name == 'workflow_dispatch' &&
-             inputs.publish == true)
-          )
-        env:
-          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
-        run: |
-          echo "La generación terminó correctamente."
-          echo "Antes de publicar, confirma que el proyecto contiene el paso de subida a YouTube."
-          echo "Este bloque no sube el vídeo por sí solo."
           
