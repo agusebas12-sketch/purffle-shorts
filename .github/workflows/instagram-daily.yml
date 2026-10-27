@@ -3,6 +3,10 @@ name: Instagram Daily
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Daily Spanish Short"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   actions: read
@@ -10,14 +14,47 @@ permissions:
 
 jobs:
   publicar-reel:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+
     steps:
+      - name: Seleccionar el Short correcto
+        id: latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          YOUTUBE_RUN_ID: ${{ github.event.workflow_run.id }}
+          YOUTUBE_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+        run: |
+          set -e
+
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            RUN_ID="$YOUTUBE_RUN_ID"
+            RUN_NUMBER="$YOUTUBE_RUN_NUMBER"
+          else
+            RUN_DATA=$(gh api \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/daily-short.yml/runs?status=success&per_page=1" \
+              --jq '.workflow_runs[0] | "\(.id) \(.run_number)"')
+
+            if [ -z "$RUN_DATA" ] || [ "$RUN_DATA" = "null null" ]; then
+              echo "No se encontró una ejecución exitosa de YouTube."
+              exit 1
+            fi
+
+            RUN_ID=$(echo "$RUN_DATA" | awk '{print $1}')
+            RUN_NUMBER=$(echo "$RUN_DATA" | awk '{print $2}')
+          fi
+
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "run_number=$RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "Se descargará el Short de la ejecución $RUN_NUMBER."
+
       - name: Descargar el Short de YouTube
         uses: actions/download-artifact@v4
         with:
-          name: short-7
+          name: short-${{ steps.latest.outputs.run_number }}
           repository: agusebas12-sketch/purffle-shorts
-          run-id: 40350058912
+          run-id: ${{ steps.latest.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: video
 
@@ -38,9 +75,7 @@ jobs:
             exit 1
           fi
 
-          echo "Archivo encontrado:"
           ls -lh "$VIDEO"
-          echo "Iniciando subida a Cloudinary..."
 
           RESPONSE=$(curl -sS --connect-timeout 20 --max-time 180 \
             --user "$API_KEY:$API_SECRET" \
@@ -54,7 +89,6 @@ jobs:
           BODY=$(printf '%s\n' "$RESPONSE" | sed '/^HTTP_STATUS:/d')
 
           echo "Código HTTP de Cloudinary: $HTTP_STATUS"
-          echo "Respuesta de Cloudinary:"
           echo "$BODY"
 
           if [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
@@ -163,4 +197,3 @@ jobs:
           fi
 
           echo "Reel publicado correctamente. ID: $ID"
-          
