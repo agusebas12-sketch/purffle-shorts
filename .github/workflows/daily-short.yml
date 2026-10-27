@@ -78,7 +78,10 @@ jobs:
         env:
           YOUTUBE_TOKEN_JSON_B64: ${{ secrets.YOUTUBE_TOKEN_JSON_B64 }}
         run: |
-          test -n "$YOUTUBE_TOKEN_JSON_B64" || { echo "Falta el secreto de YouTube"; exit 1; }
+          test -n "$YOUTUBE_TOKEN_JSON_B64" || {
+            echo "Falta el secreto de YouTube"
+            exit 1
+          }
           printf '%s' "$YOUTUBE_TOKEN_JSON_B64" | base64 --decode > "$RUNNER_TEMP/token.json"
           python -m json.tool "$RUNNER_TEMP/token.json" > /dev/null
           chmod 600 "$RUNNER_TEMP/token.json"
@@ -96,13 +99,21 @@ jobs:
           SCRIPT_STYLE: facts
           TARGET_SECONDS: "40"
           CAPTION_STYLE: bold
-          VISUAL_SOURCES: pixabay
+          VISUAL_SOURCES: pixabay-photos
+          PYTHONUNBUFFERED: "1"
           UPLOAD: "true"
           PUBLISH_TO: "youtube"
           YT_TOKEN_FILE: ${{ runner.temp }}/token.json
           KEEP_VIDEOS: "true"
         run: |
-          purffle-shorts make --style facts --lang es --duration 40 --caption-style bold --topic "${{ steps.topic.outputs.topic }}"
+          purffle-shorts make \
+            --style facts \
+            --lang es \
+            --duration 40 \
+            --caption-style bold \
+            --visuals pixabay-photos \
+            --verbose \
+            --topic "${{ steps.topic.outputs.topic }}"
 
       - name: Save video for download
         uses: actions/upload-artifact@v4
@@ -111,4 +122,3 @@ jobs:
           path: output_videos/**/*.mp4
           if-no-files-found: error
           retention-days: 7
-          
