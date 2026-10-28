@@ -1,11 +1,10 @@
-
 name: Daily Long Mystery Video
 
 on:
   workflow_dispatch:
     inputs:
       publish:
-        description: "Prueba: mantener desactivada la publicación"
+        description: "Mantener desactivada la publicación automática"
         required: true
         type: boolean
         default: false
@@ -28,6 +27,7 @@ jobs:
     env:
       LLM_PROVIDER: groq
       LLM_MODEL: openai/gpt-oss-120b
+      LLM_JSON_SCHEMA: "0"
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
@@ -53,35 +53,48 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install .
 
-      - name: Ajustar salida JSON de Groq para este flujo
+      - name: Configurar JSON compatible con Groq
         shell: bash
         run: |
+          set -e
           python - <<'PY'
           from pathlib import Path
           import purffle_shorts.llm as llm
 
           path = Path(llm.__file__)
           source = path.read_text(encoding="utf-8")
-          old = 'Preset("groq", "Groq (Llama, fast)", "https://api.groq.com/openai/v1", ("GROQ_API_KEY",),\n           "llama-3.3-70b-versatile"),'
-          new = 'Preset("groq", "Groq (Llama, fast)", "https://api.groq.com/openai/v1", ("GROQ_API_KEY",),\n           "llama-3.3-70b-versatile", json_mode=False),'
+
+          old = '''Preset("groq", "Groq (Llama, fast)", "https://api.groq.com/openai/v1", ("GROQ_API_KEY",),
+                     "llama-3.3-70b-versatile"),'''
+
+          new = '''Preset("groq", "Groq (Llama, fast)", "https://api.groq.com/openai/v1", ("GROQ_API_KEY",),
+                     "llama-3.3-70b-versatile", json_mode=True),'''
 
           if old not in source:
-              raise SystemExit("No se encontró la definición esperada de Groq.")
+              raise SystemExit(
+                  "No se encontró la definición esperada de Groq; "
+                  "se detiene el flujo para evitar modificar el archivo incorrectamente."
+              )
+
           path.write_text(source.replace(old, new, 1), encoding="utf-8")
-          print("Ajuste de Groq aplicado correctamente.")
+          print("Modo JSON compatible activado para Groq.")
           PY
 
       - name: Comprobar configuración
         shell: bash
         run: |
           set -e
+
           if [ -z "$GROQ_API_KEY" ]; then
             echo "Error: falta el secreto GROQ_API_KEY."
             exit 1
           fi
+
           echo "Clave de Groq configurada."
           echo "Proveedor: $LLM_PROVIDER"
           echo "Modelo: $LLM_MODEL"
+          echo "Esquema JSON estricto: desactivado"
+          echo "Modo JSON compatible: activado"
           echo "Pixabay configurado: $([ -n "$PIXABAY_API_KEY" ] && echo sí || echo no)"
           echo "Pexels configurado: $([ -n "$PEXELS_API_KEY" ] && echo sí || echo no)"
 
@@ -89,6 +102,7 @@ jobs:
         shell: bash
         run: |
           set -e
+
           purffle-shorts make \
             --style explainer \
             --lang es \
@@ -103,14 +117,19 @@ jobs:
         shell: bash
         run: |
           set -e
-          echo "Buscando el vídeo generado..."
-          find output_videos -type f -name "*.mp4" -size +1M -print
 
-          if ! find output_videos -type f -name "*.mp4" -size +1M -print -quit | grep -q .; then
+          echo "Buscando el vídeo generado..."
+
+          VIDEO="$(find output_videos -type f -name '*.mp4' -size +1M -print -quit 2>/dev/null || true)"
+
+          if [ -z "$VIDEO" ]; then
             echo "Error: no se encontró un vídeo MP4 válido."
             exit 1
           fi
-          echo "Vídeo encontrado correctamente."
+
+          echo "Vídeo encontrado: $VIDEO"
+          ffprobe -v error -show_entries format=duration \
+            -of default=noprint_wrappers=1:nokey=1 "$VIDEO"
 
       - name: Guardar vídeo para descargar
         if: always()
@@ -120,4 +139,3 @@ jobs:
           path: output_videos/**/*.mp4
           if-no-files-found: warn
           retention-days: 7
-          
