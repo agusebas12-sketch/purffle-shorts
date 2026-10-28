@@ -26,9 +26,9 @@ jobs:
     timeout-minutes: 45
 
     env:
-      LLM_PROVIDER: gemini
-      LLM_MODEL: gemini-3.8-flash
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      LLM_PROVIDER: groq
+      LLM_MODEL: openai/gpt-4o-mini
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
       PYTHONUNBUFFERED: "1"
@@ -57,13 +57,17 @@ jobs:
         shell: bash
         run: |
           set -e
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo "Error: falta el secreto GEMINI_API_KEY."
+
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "Error: falta el secreto GROQ_API_KEY."
             exit 1
           fi
-          echo "Clave de Gemini configurada."
+
+          echo "Clave de Groq configurada."
+          echo "Proveedor: $LLM_PROVIDER"
           echo "Modelo: $LLM_MODEL"
           echo "Pixabay configurado: $([ -n "$PIXABAY_API_KEY" ] && echo sí || echo no)"
+          echo "Pexels configurado: $([ -n "$PEXELS_API_KEY" ] && echo sí || echo no)"
 
       - name: Generar vídeo de 170 segundos
         shell: bash
