@@ -15,7 +15,7 @@ jobs:
 
     env:
       LLM_PROVIDER: gemini
-      LLM_MODEL: gemini-2.5-flash
+      LLM_MODEL: gemini-3.8-flash
       LLM_JSON_SCHEMA: "1"
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
