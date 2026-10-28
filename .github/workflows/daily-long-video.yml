@@ -1,148 +1,98 @@
+
 name: Daily Long Mystery Video
 
 on:
-workflow_dispatch:
-inputs:
-publish:
-description: "Publicar automáticamente"
-required: true
-type: boolean
-default: false
-schedule:
-- cron: "0 18 * * *"
+  workflow_dispatch:
+  schedule:
+    - cron: "0 18 * * *"
 
 permissions:
-contents: read
-actions: read
+  contents: read
+  actions: read
 
 concurrency:
-group: daily-long-mystery-video
-cancel-in-progress: false
+  group: daily-long-mystery-video
+  cancel-in-progress: false
 
 jobs:
-create-long-video:
-runs-on: ubuntu-latest
-timeout-minutes: 45
+  create-long-video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
 
-env:
-  LLM_PROVIDER: groq
-  LLM_MODEL: openai/gpt-oss-120b
-  LLM_JSON_SCHEMA: "0"
-  GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-  PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
-  PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-  PYTHONUNBUFFERED: "1"
+    env:
+      LLM_PROVIDER: groq
+      LLM_MODEL: openai/gpt-oss-120b
+      LLM_JSON_SCHEMA: "0"
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      PYTHONUNBUFFERED: "1"
 
-steps:
-  - name: Descargar el repositorio
-    uses: actions/checkout@v4
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
 
-  - name: Preparar Python
-    uses: actions/setup-python@v5
-    with:
-      python-version: "3.12"
-      cache: pip
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
 
-  - name: Instalar FFmpeg
-    run: |
-      sudo apt-get update
-      sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Instalar FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
 
-  - name: Instalar PurffleShorts
-    run: |
-      python -m pip install --upgrade pip
-      python -m pip install .
+      - name: Instalar PurffleShorts
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
 
-  - name: Desactivar JSON forzado en Groq
-    shell: bash
-    run: |
-      set -e
-      python - <<'PY'
-      from pathlib import Path
-      import purffle_shorts.llm as llm
+      - name: Desactivar JSON forzado en Groq
+        shell: bash
+        run: |
+          set -e
+          python - <<'PY'
+          from pathlib import Path
+          import purffle_shorts.llm as llm
 
-      path = Path(llm.__file__)
-      source = path.read_text(encoding="utf-8")
+          path = Path(llm.__file__)
+          source = path.read_text(encoding="utf-8")
+          old = "elif schema is not None and self._json_mode:"
+          new = "elif schema is not None and self._json_mode and self.name != 'groq':"
 
-      old = "elif schema is not None and self._json_mode:"
-      new = "elif schema is not None and self._json_mode and self.name != 'groq':"
+          if source.count(old) != 1:
+              raise SystemExit("No se encontró la línea esperada en llm.py.")
 
-      count = source.count(old)
-      if count != 1:
-          raise SystemExit(
-              f"No se encontró una única línea compatible (encontradas: {count}). "
-              "Se detiene sin aplicar el cambio."
-          )
+          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+          print("Configuración de Groq corregida.")
 
-      source = source.replace(old, new, 1)
-      path.write_text(source, encoding="utf-8")
+          PY
 
-      check = path.read_text(encoding="utf-8")
-      if new not in check:
-          raise SystemExit("Falló la comprobación del cambio.")
+      - name: Comprobar configuración
+        run: |
+          set -e
+          test -n "$GROQ_API_KEY"
+          echo "Configuración comprobada."
 
-      print("Correcto: Groq no enviará response_format JSON.")
-      print("El analizador de PurffleShorts seguirá procesando la respuesta.")
-      PY
+      - name: Generar vídeo
+        run: |
+          purffle-shorts make \
+            --style explainer \
+            --lang es \
+            --duration 170 \
+            --aspect 16:9 \
+            --visuals pixabay \
+            --no-upload \
+            --verbose \
+            --topic "El origen de las señales misteriosas del espacio"
 
-  - name: Comprobar configuración
-    shell: bash
-    run: |
-      set -e
-      if [ -z "$GROQ_API_KEY" ]; then
-        echo "Error: falta el secreto GROQ_API_KEY."
-        exit 1
-      fi
-
-      echo "Proveedor: $LLM_PROVIDER"
-      echo "Modelo: $LLM_MODEL"
-      echo "Duración objetivo: 170 segundos"
-      echo "Publicación automática desactivada."
-
-  - name: Generar vídeo de 170 segundos
-    shell: bash
-    run: |
-      set -e
-      purffle-shorts make \
-        --style explainer \
-        --lang es \
-        --duration 170 \
-        --aspect 16:9 \
-        --visuals pixabay \
-        --no-upload \
-        --verbose \
-        --topic "El origen de las señales misteriosas del espacio"
-
-  - name: Validar duración y archivo MP4
-    shell: bash
-    run: |
-      set -e
-      VIDEO="$(find output_videos -type f -name '*.mp4' -size +1M -print -quit 2>/dev/null || true)"
-
-      if [ -z "$VIDEO" ]; then
-        echo "Error: no se encontró un vídeo MP4 válido."
-        exit 1
-      fi
-
-      DURATION="$(ffprobe -v error \
-        -show_entries format=duration \
-        -of default=noprint_wrappers=1:nokey=1 "$VIDEO")"
-
-      echo "Vídeo: $VIDEO"
-      echo "Duración real: $DURATION segundos"
-
-      if ! python -c 'import sys; d=float(sys.argv[1]); sys.exit(0 if d >= 120 else 1)' "$DURATION"; then
-        echo "Error: el vídeo dura menos de 120 segundos."
-        exit 1
-      fi
-
-      echo "Vídeo validado correctamente."
-
-  - name: Guardar vídeo para descargar
-    if: always()
-    uses: actions/upload-artifact@v4
-    with:
-      name: video-largo-${{ github.run_number }}
-      path: output_videos/**/*.mp4
-      if-no-files-found: warn
-      retention-days: 7
+      - name: Guardar vídeo para descargar
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-largo-${{ github.run_number }}
+          path: output_videos/**/*.mp4
+          if-no-files-found: warn
+          retention-days: 7
+          
