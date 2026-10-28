@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: "Mantener desactivada la publicación automática"
+        description: "Publicar automáticamente"
         required: true
         type: boolean
         default: false
@@ -27,7 +27,7 @@ jobs:
 
     env:
       LLM_PROVIDER: groq
-      LLM_MODEL: llama-3.3-70b-versatile
+      LLM_MODEL: openai/gpt-oss-120b
       LLM_JSON_SCHEMA: "0"
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
@@ -54,17 +54,41 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install .
 
+      - name: Configurar Groq para GPT-OSS
+        shell: bash
+        run: |
+          set -e
+          python - <<'PY'
+          from pathlib import Path
+          import purffle_shorts.llm as llm
+
+          path = Path(llm.__file__)
+          source = path.read_text(encoding="utf-8")
+
+          old = '''    Preset("groq", "Groq (Llama, fast)", "https://api.groq.com/openai/v1", ("GROQ_API_KEY",),
+                     "llama-3.3-70b-versatile"),'''
+
+          new = '''    Preset("groq", "Groq (Llama, fast)", "https://api.groq.com/openai/v1", ("GROQ_API_KEY",),
+                     "openai/gpt-oss-120b", json_mode=False),'''
+
+          if old not in source:
+              raise SystemExit(
+                  "No se encontró la configuración de Groq esperada. "
+                  "No se modificó el archivo."
+              )
+
+          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+          print("Groq configurado para GPT-OSS 120B sin JSON forzado.")
+          PY
+
       - name: Comprobar configuración
         shell: bash
         run: |
           set -e
-
           if [ -z "$GROQ_API_KEY" ]; then
             echo "Error: falta el secreto GROQ_API_KEY."
             exit 1
           fi
-
-          echo "Clave de Groq configurada."
           echo "Proveedor: $LLM_PROVIDER"
           echo "Modelo: $LLM_MODEL"
           echo "Duración objetivo: 170 segundos"
@@ -74,7 +98,6 @@ jobs:
         shell: bash
         run: |
           set -e
-
           purffle-shorts make \
             --style explainer \
             --lang es \
@@ -89,7 +112,6 @@ jobs:
         shell: bash
         run: |
           set -e
-
           VIDEO="$(find output_videos -type f -name '*.mp4' -size +1M -print -quit 2>/dev/null || true)"
 
           if [ -z "$VIDEO" ]; then
