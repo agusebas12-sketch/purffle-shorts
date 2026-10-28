@@ -72,18 +72,36 @@ jobs:
           print("Modelo:", os.environ["LLM_MODEL"])
           PY
 
-      - name: Generar vídeo
+      - name: Generar vídeo con reintentos
+        shell: bash
         run: |
+          set -e
           mkdir -p output_videos
-          purffle-shorts make \
-            --style explainer \
-            --lang es \
-            --duration 170 \
-            --aspect 16:9 \
-            --visuals pixabay \
-            --no-upload \
-            --verbose \
-            --topic "El origen de las señales misteriosas del espacio"
+
+          for intento in 1 2 3; do
+            echo "Intento $intento de 3..."
+
+            if purffle-shorts make \
+              --style explainer \
+              --lang es \
+              --duration 170 \
+              --aspect 16:9 \
+              --visuals pixabay \
+              --no-upload \
+              --verbose \
+              --topic "El origen de las señales misteriosas del espacio"; then
+              echo "Generación completada."
+              exit 0
+            fi
+
+            if [ "$intento" -lt 3 ]; then
+              echo "Esperando 30 segundos antes de reintentar..."
+              sleep 30
+            fi
+          done
+
+          echo "ERROR: la generación falló después de tres intentos."
+          exit 1
 
       - name: Guardar vídeo generado
         if: always()
