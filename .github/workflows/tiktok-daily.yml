@@ -11,20 +11,30 @@ permissions:
 jobs:
   publicar-tiktok:
     runs-on: ubuntu-latest
+
     steps:
       - name: Buscar el último Short de YouTube
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -e
+          set -euo pipefail
+
           RUN_DATA=$(gh api \
             "repos/$GITHUB_REPOSITORY/actions/workflows/daily-short.yml/runs?status=success&per_page=1" \
             --jq '.workflow_runs[0] | "\(.id) \(.run_number)"')
-          test -n "$RUN_DATA"
+
+          if [ -z "$RUN_DATA" ] || [ "$RUN_DATA" = "null null" ]; then
+            echo "ERROR: No se encontró una ejecución exitosa de YouTube."
+            exit 1
+          fi
+
           RUN_ID=$(echo "$RUN_DATA" | awk '{print $1}')
           RUN_NUMBER=$(echo "$RUN_DATA" | awk '{print $2}')
+
           echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
           echo "RUN_NUMBER=$RUN_NUMBER" >> "$GITHUB_ENV"
+
+          echo "Vídeo de origen localizado."
 
       - name: Descargar el Short
         uses: actions/download-artifact@v4
@@ -35,25 +45,61 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: video
 
-      - name: Enviar vídeo a TikTok en privado
+      - name: Diagnosticar y enviar vídeo a TikTok
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           set -euo pipefail
+          umask 077
+
+          WORK_DIR=$(mktemp -d)
+          trap 'rm -rf "$WORK_DIR"; unset TOKEN UPLOAD_URL' EXIT
 
           VIDEO=$(find video -type f -name '*.mp4' -print -quit)
-          test -n "$VIDEO"
 
-          TOKEN=$(curl -fsS \
+          if [ -z "$VIDEO" ]; then
+            echo "ERROR: No se encontró ningún vídeo MP4."
+            exit 1
+          fi
+
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SECRET_KEY:-}" ]; then
+            echo "ERROR: Faltan los secretos de Supabase en GitHub."
+            exit 1
+          fi
+
+          echo "Vídeo localizado. Comprobando el acceso a Supabase..."
+
+          HTTP=$(curl -sS \
+            -o "$WORK_DIR/supabase.json" \
+            -w '%{http_code}' \
             "$SUPABASE_URL/rest/v1/tiktok_tokens?select=access_token&id=eq.1" \
             -H "apikey: $SUPABASE_SECRET_KEY" \
-            -H "Authorization: Bearer $SUPABASE_SECRET_KEY" \
-            | jq -er '.[0].access_token')
+            -H "Authorization: Bearer $SUPABASE_SECRET_KEY") || {
+              echo "ERROR: No se pudo conectar con Supabase."
+              exit 1
+            }
+
+          echo "Supabase respondió HTTP $HTTP."
+
+          if [ "$HTTP" -lt 200 ] || [ "$HTTP" -ge 300 ]; then
+            echo "Detalle del error de Supabase:"
+            jq -c '{code, message, hint, details}' "$WORK_DIR/supabase.json" 2>/dev/null \
+              || echo "La respuesta no contiene un error JSON reconocible."
+            exit 1
+          fi
+
+          TOKEN=$(jq -er '.[0].access_token | select(type == "string" and length > 0)' \
+            "$WORK_DIR/supabase.json") || {
+              echo "ERROR: Supabase respondió, pero no se encontró un token."
+              exit 1
+            }
+
+          rm -f "$WORK_DIR/supabase.json"
 
           SIZE=$(stat -c%s "$VIDEO")
 
-          RESPONSE=$(jq -n \
+          BODY=$(jq -n \
             --argjson size "$SIZE" \
             '{
               post_info: {
@@ -70,21 +116,66 @@ jobs:
                 chunk_size: $size,
                 total_chunk_count: 1
               }
-            }' | curl -fsS \
-              https://open.tiktokapis.com/v2/post/publish/video/init/ \
-              -H "Authorization: Bearer $TOKEN" \
-              -H "Content-Type: application/json" \
-              -d @-)
+            }')
 
-          echo "$RESPONSE" | jq .
-          UPLOAD_URL=$(echo "$RESPONSE" | jq -er '.data.upload_url')
-          PUBLISH_ID=$(echo "$RESPONSE" | jq -er '.data.publish_id')
+          echo "Solicitando a TikTok iniciar la publicación..."
 
-          curl -fsS -X PUT "$UPLOAD_URL" \
+          HTTP=$(curl -sS \
+            -o "$WORK_DIR/tiktok-init.json" \
+            -w '%{http_code}' \
+            https://open.tiktokapis.com/v2/post/publish/video/init/ \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$BODY") || {
+              echo "ERROR: No se pudo conectar con la API de TikTok."
+              exit 1
+            }
+
+          echo "Inicio de publicación en TikTok: HTTP $HTTP."
+
+          if [ "$HTTP" -lt 200 ] || [ "$HTTP" -ge 300 ]; then
+            echo "Detalle del error de TikTok:"
+            jq -c '{error: .error, data: .data}' \
+              "$WORK_DIR/tiktok-init.json" 2>/dev/null \
+              || echo "La respuesta no contiene un error JSON reconocible."
+            exit 1
+          fi
+
+          API_CODE=$(jq -r '.error.code // "ok"' "$WORK_DIR/tiktok-init.json")
+
+          if [ "$API_CODE" != "ok" ]; then
+            echo "TikTok rechazó la solicitud: $API_CODE"
+            jq -c '.error' "$WORK_DIR/tiktok-init.json"
+            exit 1
+          fi
+
+          UPLOAD_URL=$(jq -er '.data.upload_url' "$WORK_DIR/tiktok-init.json")
+          PUBLISH_ID=$(jq -er '.data.publish_id' "$WORK_DIR/tiktok-init.json")
+
+          echo "TikTok aceptó iniciar la solicitud. Subiendo el archivo..."
+
+          HTTP=$(curl -sS \
+            -o "$WORK_DIR/upload-response.txt" \
+            -w '%{http_code}' \
+            -X PUT "$UPLOAD_URL" \
             -H "Content-Type: video/mp4" \
             -H "Content-Length: $SIZE" \
             -H "Content-Range: bytes 0-$((SIZE - 1))/$SIZE" \
-            --data-binary "@$VIDEO"
+            --data-binary "@$VIDEO") || {
+              echo "ERROR: Falló la conexión durante la carga a TikTok."
+              exit 1
+            }
 
-          echo "TikTok recibió el vídeo. ID: $PUBLISH_ID"
+          echo "Carga del vídeo: HTTP $HTTP."
+
+          if [ "$HTTP" -lt 200 ] || [ "$HTTP" -ge 300 ]; then
+            echo "TikTok rechazó la carga del archivo."
+            echo "No se muestra la URL privada de carga."
+            exit 1
+          fi
+
+          unset TOKEN UPLOAD_URL
+
+          echo "Carga completada. ID de publicación: $PUBLISH_ID"
+          echo "Esto no confirma que el vídeo ya esté publicado."
           
