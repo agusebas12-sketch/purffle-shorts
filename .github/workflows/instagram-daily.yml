@@ -122,7 +122,7 @@ jobs:
             --data-urlencode "video_url=$VIDEO_URL" \
             --data-urlencode "caption=Un misterio que todavía sorprende. ¿Qué opinas? #misterios #curiosidades #shorts" \
             --data-urlencode "access_token=$IG_TOKEN" \
-            "https://graph.facebook.com/v23.0/$IG_USER_ID/media")
+            "https://graph.instagram.com/v23.0/$IG_USER_ID/media")
 
           echo "Respuesta de Instagram:"
           echo "$RESPONSE"
@@ -147,9 +147,9 @@ jobs:
 
           for i in $(seq 1 20); do
             RESPONSE=$(curl -sS --connect-timeout 20 --max-time 60 -G \
-              --data-urlencode "fields=status_code,status" \
+              --data-urlencode "fields=status_code" \
               --data-urlencode "access_token=$IG_TOKEN" \
-              "https://graph.facebook.com/v23.0/$CREATION_ID")
+              "https://graph.instagram.com/v23.0/$CREATION_ID")
 
             echo "Estado del procesamiento: $RESPONSE"
 
@@ -184,7 +184,7 @@ jobs:
             -X POST \
             --data-urlencode "creation_id=$CREATION_ID" \
             --data-urlencode "access_token=$IG_TOKEN" \
-            "https://graph.facebook.com/v23.0/$IG_USER_ID/media_publish")
+            "https://graph.instagram.com/v23.0/$IG_USER_ID/media_publish")
 
           echo "Respuesta de publicación:"
           echo "$RESPONSE"
@@ -197,3 +197,4 @@ jobs:
           fi
 
           echo "Reel publicado correctamente. ID: $ID"
+          
