@@ -7,10 +7,15 @@ app.disable("x-powered-by");
 
 const PORT = process.env.PORT || 3000;
 const CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY;
+const CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET;
 const REDIRECT_URI = process.env.TIKTOK_REDIRECT_URI;
 const APP_BASE_URL = process.env.APP_BASE_URL;
 
 const pendingStates = new Map();
+
+// Solo para pruebas: la memoria se pierde si Render reinicia el servicio.
+// No publicar vídeos hasta configurar almacenamiento persistente y seguro.
+let tokenData = null;
 
 app.get("/", (req, res) => {
   res.send(`
@@ -21,7 +26,9 @@ app.get("/", (req, res) => {
       <title>Purffle Shorts</title>
       <h1>Purffle Shorts</h1>
       <p>Servidor de autorización de TikTok.</p>
-      <p>Este servidor todavía no publica vídeos.</p>
+      <p>Estado de conexión: ${
+        tokenData ? "autorización recibida (prueba temporal)" : "pendiente"
+      }</p>
       <a href="/auth/tiktok">Conectar con TikTok</a>
     </html>
   `);
@@ -32,27 +39,24 @@ app.get("/health", (req, res) => {
 });
 
 app.get("/auth/tiktok", (req, res) => {
-  if (!CLIENT_KEY || !REDIRECT_URI || !APP_BASE_URL) {
+  if (!CLIENT_KEY || !CLIENT_SECRET || !REDIRECT_URI || !APP_BASE_URL) {
     return res.status(503).send(
-      "Falta configurar las variables de entorno de TikTok en Render."
+      "Falta configurar una variable de entorno de TikTok en Render."
     );
   }
 
   const state = crypto.randomBytes(32).toString("hex");
-  pendingStates.set(state, Date.now());
 
-  // El estado expira después de 10 minutos.
   for (const [key, createdAt] of pendingStates.entries()) {
     if (Date.now() - createdAt > 10 * 60 * 1000) {
       pendingStates.delete(key);
     }
   }
 
-  const authorizationUrl = new URL(
-    "https://www.tiktok.com/v2/auth/authorize/"
-  );
+  pendingStates.set(state, Date.now());
 
-  authorizationUrl.search = new URLSearchParams({
+  const url = new URL("https://www.tiktok.com/v2/auth/authorize/");
+  url.search = new URLSearchParams({
     client_key: CLIENT_KEY,
     response_type: "code",
     scope: "user.info.basic,video.publish,video.upload",
@@ -60,15 +64,15 @@ app.get("/auth/tiktok", (req, res) => {
     state
   }).toString();
 
-  res.redirect(authorizationUrl.toString());
+  res.redirect(url.toString());
 });
 
-app.get("/auth/callback", (req, res) => {
-  const { code, state, error } = req.query;
+app.get("/auth/callback", async (req, res) => {
+  const { code, state, error, error_description } = req.query;
 
   if (error) {
     return res.status(400).send(
-      "TikTok no autorizó la conexión. Puedes volver a intentarlo."
+      `TikTok no autorizó la conexión: ${String(error_description || error)}`
     );
   }
 
@@ -78,7 +82,7 @@ app.get("/auth/callback", (req, res) => {
     Date.now() - pendingStates.get(state) > 10 * 60 * 1000
   ) {
     return res.status(400).send(
-      "Estado de autorización inválido o caducado. Inicia la conexión otra vez."
+      "Estado de autorización inválido o caducado. Vuelve a iniciar la conexión."
     );
   }
 
@@ -90,19 +94,77 @@ app.get("/auth/callback", (req, res) => {
     );
   }
 
-  // No mostramos ni guardamos el código ni los tokens en la página.
-  // El intercambio seguro del código por tokens se añadirá después.
-  res.status(200).send(`
-    <!doctype html>
-    <html lang="es">
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1">
-      <title>Autorización recibida</title>
-      <h1>Respuesta recibida</h1>
-      <p>El servidor recibió la respuesta de TikTok.</p>
-      <p>La conexión todavía no está completada y no se ha publicado ningún vídeo.</p>
-    </html>
-  `);
+  try {
+    const body = new URLSearchParams({
+      client_key: CLIENT_KEY,
+      client_secret: CLIENT_SECRET,
+      code,
+      grant_type: "authorization_code",
+      redirect_uri: REDIRECT_URI
+    });
+
+    const response = await fetch(
+      "https://open.tiktokapis.com/v2/oauth/token/",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Cache-Control": "no-cache"
+        },
+        body
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok || result.error) {
+      console.error("Error de autorización de TikTok:", {
+        status: response.status,
+        error: result.error,
+        description: result.error_description
+      });
+
+      return res.status(400).send(
+        "TikTok no pudo completar la autorización. Revisa la configuración y vuelve a intentarlo."
+      );
+    }
+
+    if (!result.access_token || !result.refresh_token) {
+      return res.status(400).send(
+        "TikTok no devolvió todos los datos de autorización necesarios."
+      );
+    }
+
+    // Almacenamiento temporal solo para comprobar el intercambio OAuth.
+    // No es persistente y aún no permite publicación automática fiable.
+    tokenData = {
+      accessToken: result.access_token,
+      refreshToken: result.refresh_token,
+      expiresAt: Date.now() + Number(result.expires_in || 0) * 1000,
+      refreshExpiresAt:
+        Date.now() + Number(result.refresh_expires_in || 0) * 1000,
+      openId: result.open_id,
+      scope: result.scope
+    };
+
+    return res.status(200).send(`
+      <!doctype html>
+      <html lang="es">
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Purffle Shorts</title>
+        <h1>Autorización recibida</h1>
+        <p>TikTok devolvió los tokens correctamente.</p>
+        <p>Los tokens están solo en memoria temporal. La conexión persistente y la publicación automática aún no están configuradas.</p>
+        <a href="/">Volver a Purffle Shorts</a>
+      </html>
+    `);
+  } catch (err) {
+    console.error("Fallo al conectar con TikTok:", err.message);
+    return res.status(500).send(
+      "No se pudo completar la conexión. Inténtalo de nuevo más tarde."
+    );
+  }
 });
 
 app.listen(PORT, "0.0.0.0", () => {
