@@ -1,16 +1,58 @@
-
 name: TikTok Daily
 
 on:
-  workflow_dispatch:
+workflow_dispatch:
 
 permissions:
-  contents: read
+actions: read
+contents: read
 
 jobs:
-  comprobar-configuracion:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Comprobar que el workflow funciona
-        run: echo "TikTok preparado para configurar. No se publica ningún vídeo."
-        
+preparar-tiktok:
+runs-on: ubuntu-latest
+
+steps:
+  - name: Buscar el último Short de YouTube
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    run: |
+      set -e
+
+      RUN_DATA=$(gh api \
+        "repos/$GITHUB_REPOSITORY/actions/workflows/daily-short.yml/runs?status=success&per_page=1" \
+        --jq '.workflow_runs[0] | "\(.id) \(.run_number)"')
+
+      if [ -z "$RUN_DATA" ] || [ "$RUN_DATA" = "null null" ]; then
+        echo "No se encontró una ejecución exitosa de YouTube."
+        exit 1
+      fi
+
+      RUN_ID=$(echo "$RUN_DATA" | awk '{print $1}')
+      RUN_NUMBER=$(echo "$RUN_DATA" | awk '{print $2}')
+
+      echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+      echo "RUN_NUMBER=$RUN_NUMBER" >> "$GITHUB_ENV"
+
+      echo "Se usará el Short número $RUN_NUMBER."
+
+  - name: Descargar el Short
+    uses: actions/download-artifact@v4
+    with:
+      name: short-${{ env.RUN_NUMBER }}
+      repository: ${{ github.repository }}
+      run-id: ${{ env.RUN_ID }}
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+      path: video
+
+  - name: Comprobar el vídeo
+    run: |
+      set -e
+      VIDEO=$(find video -type f -name '*.mp4' -print -quit)
+
+      if [ -z "$VIDEO" ]; then
+        echo "No se encontró ningún vídeo MP4."
+        exit 1
+      fi
+
+      echo "Vídeo encontrado:"
+      ls -lh "$VIDEO"
