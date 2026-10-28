@@ -14,6 +14,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 
 const pendingStates = new Map();
+let refreshInProgress = null;
 
 function supabaseHeaders() {
   return {
@@ -28,33 +29,153 @@ async function saveTokens(tokens) {
     throw new Error("Falta configurar Supabase en Render.");
   }
 
-  const url =
-    `${SUPABASE_URL}/rest/v1/tiktok_tokens?on_conflict=id`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      ...supabaseHeaders(),
-      Prefer: "resolution=merge-duplicates,return=minimal"
-    },
-    body: JSON.stringify({
-      id: 1,
-      access_token: tokens.accessToken,
-      refresh_token: tokens.refreshToken,
-      open_id: tokens.openId || null,
-      scope: tokens.scope || null,
-      expires_at: new Date(tokens.expiresAt).toISOString(),
-      refresh_expires_at: new Date(
-        tokens.refreshExpiresAt
-      ).toISOString(),
-      updated_at: new Date().toISOString()
-    })
-  });
+  const response = await fetch(
+    `${SUPABASE_URL}/rest/v1/tiktok_tokens?on_conflict=id`,
+    {
+      method: "POST",
+      headers: {
+        ...supabaseHeaders(),
+        Prefer: "resolution=merge-duplicates,return=minimal"
+      },
+      body: JSON.stringify({
+        id: 1,
+        access_token: tokens.accessToken,
+        refresh_token: tokens.refreshToken,
+        open_id: tokens.openId || null,
+        scope: tokens.scope || null,
+        expires_at: new Date(tokens.expiresAt).toISOString(),
+        refresh_expires_at: new Date(
+          tokens.refreshExpiresAt
+        ).toISOString(),
+        updated_at: new Date().toISOString()
+      })
+    }
+  );
 
   if (!response.ok) {
-    const detail = await response.text();
-    console.error("Error guardando tokens en Supabase:", response.status, detail);
-    throw new Error("No se pudieron guardar los tokens en Supabase.");
+    console.error(
+      "Error guardando tokens en Supabase:",
+      response.status,
+      await response.text()
+    );
+    throw new Error("No se pudieron guardar los tokens.");
+  }
+}
+
+async function loadTokens() {
+  if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
+    throw new Error("Falta configurar Supabase en Render.");
+  }
+
+  const response = await fetch(
+    `${SUPABASE_URL}/rest/v1/tiktok_tokens?select=id,access_token,refresh_token,open_id,scope,expires_at,refresh_expires_at&id=eq.1`,
+    { headers: supabaseHeaders() }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Error leyendo tokens de Supabase: HTTP ${response.status}`
+    );
+  }
+
+  const rows = await response.json();
+  return rows[0] || null;
+}
+
+async function refreshTokensIfNeeded() {
+  if (refreshInProgress) return refreshInProgress;
+
+  refreshInProgress = (async () => {
+    const stored = await loadTokens();
+
+    if (!stored) {
+      console.log("Todavía no hay tokens de TikTok guardados.");
+      return;
+    }
+
+    const expiresAt = Date.parse(stored.expires_at);
+
+    // Renovar cuando falten 10 minutos o menos.
+    if (
+      Number.isFinite(expiresAt) &&
+      expiresAt - Date.now() > 10 * 60 * 1000
+    ) {
+      return;
+    }
+
+    const refreshExpiresAt = Date.parse(
+      stored.refresh_expires_at
+    );
+
+    if (
+      Number.isFinite(refreshExpiresAt) &&
+      refreshExpiresAt <= Date.now()
+    ) {
+      console.error(
+        "El refresh token ha caducado. Hace falta volver a autorizar TikTok."
+      );
+      return;
+    }
+
+    if (!stored.refresh_token) {
+      throw new Error("No existe refresh token guardado.");
+    }
+
+    const body = new URLSearchParams({
+      client_key: CLIENT_KEY,
+      client_secret: CLIENT_SECRET,
+      grant_type: "refresh_token",
+      refresh_token: stored.refresh_token
+    });
+
+    const response = await fetch(
+      "https://open.tiktokapis.com/v2/oauth/token/",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Cache-Control": "no-cache"
+        },
+        body
+      }
+    );
+
+    const result = await response.json();
+
+    if (
+      !response.ok ||
+      result.error ||
+      !result.access_token ||
+      !result.refresh_token
+    ) {
+      console.error("TikTok rechazó la renovación:", {
+        status: response.status,
+        error: result.error,
+        description: result.error_description
+      });
+      throw new Error("No se pudieron renovar los tokens.");
+    }
+
+    const now = Date.now();
+
+    await saveTokens({
+      accessToken: result.access_token,
+      refreshToken: result.refresh_token,
+      openId: result.open_id || stored.open_id,
+      scope: result.scope || stored.scope,
+      expiresAt: now + Number(result.expires_in) * 1000,
+      refreshExpiresAt: result.refresh_expires_in
+        ? now + Number(result.refresh_expires_in) * 1000
+        : refreshExpiresAt
+    });
+
+    console.log("Tokens renovados y guardados en Supabase.");
+  })();
+
+  try {
+    await refreshInProgress;
+  } finally {
+    refreshInProgress = null;
   }
 }
 
@@ -67,14 +188,17 @@ app.get("/", (req, res) => {
       <title>Purffle Shorts</title>
       <h1>Purffle Shorts</h1>
       <p>Servidor de autorización de TikTok.</p>
-      <p>La conexión se almacena en Supabase cuando se autoriza correctamente.</p>
+      <p>La conexión se almacena en Supabase.</p>
       <a href="/auth/tiktok">Conectar con TikTok</a>
     </html>
   `);
 });
 
 app.get("/health", (req, res) => {
-  res.json({ ok: true, service: "purffle-tiktok-auth" });
+  res.json({
+    ok: true,
+    service: "purffle-tiktok-auth"
+  });
 });
 
 app.get("/auth/tiktok", (req, res) => {
@@ -85,7 +209,7 @@ app.get("/auth/tiktok", (req, res) => {
     !APP_BASE_URL
   ) {
     return res.status(503).send(
-      "Falta configurar una variable de entorno de TikTok en Render."
+      "Falta configurar una variable de entorno en Render."
     );
   }
 
@@ -99,7 +223,10 @@ app.get("/auth/tiktok", (req, res) => {
 
   pendingStates.set(state, Date.now());
 
-  const url = new URL("https://www.tiktok.com/v2/auth/authorize/");
+  const url = new URL(
+    "https://www.tiktok.com/v2/auth/authorize/"
+  );
+
   url.search = new URLSearchParams({
     client_key: CLIENT_KEY,
     response_type: "code",
@@ -128,7 +255,7 @@ app.get("/auth/callback", async (req, res) => {
     Date.now() - pendingStates.get(state) > 10 * 60 * 1000
   ) {
     return res.status(400).send(
-      "Estado de autorización inválido o caducado. Vuelve a iniciar la conexión."
+      "Estado inválido o caducado. Vuelve a conectar TikTok."
     );
   }
 
@@ -136,7 +263,7 @@ app.get("/auth/callback", async (req, res) => {
 
   if (typeof code !== "string" || !code) {
     return res.status(400).send(
-      "TikTok no devolvió un código de autorización."
+      "TikTok no devolvió el código de autorización."
     );
   }
 
@@ -163,37 +290,34 @@ app.get("/auth/callback", async (req, res) => {
 
     const result = await response.json();
 
-    if (!response.ok || result.error) {
-      console.error("Error de autorización de TikTok:", {
+    if (
+      !response.ok ||
+      result.error ||
+      !result.access_token ||
+      !result.refresh_token
+    ) {
+      console.error("Error de autorización:", {
         status: response.status,
         error: result.error,
         description: result.error_description
       });
 
       return res.status(400).send(
-        "TikTok no pudo completar la autorización. Revisa la configuración y vuelve a intentarlo."
+        "TikTok no pudo completar la autorización. Revisa los registros de Render."
       );
     }
 
-    if (!result.access_token || !result.refresh_token) {
-      return res.status(400).send(
-        "TikTok no devolvió todos los datos de autorización necesarios."
-      );
-    }
+    const now = Date.now();
 
-    const tokens = {
+    await saveTokens({
       accessToken: result.access_token,
       refreshToken: result.refresh_token,
-      expiresAt:
-        Date.now() + Number(result.expires_in || 0) * 1000,
+      expiresAt: now + Number(result.expires_in) * 1000,
       refreshExpiresAt:
-        Date.now() +
-        Number(result.refresh_expires_in || 0) * 1000,
+        now + Number(result.refresh_expires_in) * 1000,
       openId: result.open_id,
       scope: result.scope
-    };
-
-    await saveTokens(tokens);
+    });
 
     return res.status(200).send(`
       <!doctype html>
@@ -203,19 +327,32 @@ app.get("/auth/callback", async (req, res) => {
         <title>Purffle Shorts</title>
         <h1>Autorización recibida</h1>
         <p>TikTok devolvió los tokens y Supabase confirmó su almacenamiento.</p>
-        <p>La renovación automática y la publicación de vídeos todavía deben configurarse y probarse.</p>
+        <p>El servidor comprobará periódicamente si debe renovarlos. La renovación debe verificarse en los registros de Render.</p>
+        <p>La publicación automática de vídeos todavía no está configurada.</p>
         <a href="/">Volver a Purffle Shorts</a>
       </html>
     `);
   } catch (err) {
-    console.error("Fallo al conectar o guardar tokens:", err.message);
+    console.error("Fallo en la autorización:", err.message);
 
     return res.status(500).send(
-      "No se pudo completar la conexión o guardar los tokens. Revisa los registros de Render."
+      "No se pudo completar la conexión. Revisa los registros de Render."
     );
   }
 });
 
+async function tokenMaintenance() {
+  try {
+    await refreshTokensIfNeeded();
+  } catch (err) {
+    console.error("Mantenimiento de tokens:", err.message);
+  }
+}
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Servidor iniciado en el puerto ${PORT}`);
+
+  // Comprobar al arrancar y después cada cinco minutos.
+  tokenMaintenance();
+  setInterval(tokenMaintenance, 5 * 60 * 1000);
 });
