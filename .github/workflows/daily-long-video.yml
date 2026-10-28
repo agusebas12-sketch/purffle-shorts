@@ -1,4 +1,3 @@
-
 name: Daily Long Mystery Video
 
 on:
@@ -8,47 +7,49 @@ on:
 
 permissions:
   contents: read
-  actions: read
-
-concurrency:
-  group: daily-long-mystery-video
-  cancel-in-progress: false
 
 jobs:
-  create-long-video:
+  generar-video:
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
     env:
       LLM_PROVIDER: groq
-      LLM_MODEL: openai/gpt-oss-120b
+      LLM_MODEL: llama-3.3-70b-versatile
       LLM_JSON_SCHEMA: "0"
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-      PYTHONUNBUFFERED: "1"
 
     steps:
-      - name: Descargar el repositorio
+      - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Preparar Python
+      - name: Instalar Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
 
       - name: Instalar FFmpeg
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          sudo apt-get install -y ffmpeg
 
-      - name: Instalar PurffleShorts
+      - name: Instalar Purffle Shorts
         run: |
           python -m pip install --upgrade pip
-          python -m pip install .
+          pip install purffle-shorts
 
-      - name: Desactivar JSON forzado en Groq
+      - name: Comprobar clave de Groq
+        shell: bash
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "Falta el secreto GROQ_API_KEY en GitHub."
+            exit 1
+          fi
+          echo "Clave de Groq configurada."
+
+      - name: Desactivar modos JSON incompatibles en Groq
         shell: bash
         run: |
           set -e
@@ -58,25 +59,30 @@ jobs:
 
           path = Path(llm.__file__)
           source = path.read_text(encoding="utf-8")
-          old = "elif schema is not None and self._json_mode:"
-          new = "elif schema is not None and self._json_mode and self.name != 'groq':"
 
-          if source.count(old) != 1:
-              raise SystemExit("No se encontró la línea esperada en llm.py.")
+          replacements = [
+              (
+                  "self._json_mode = preset.json_mode",
+                  'self._json_mode = preset.json_mode and preset.name != "groq"',
+              ),
+              (
+                  'self._schema_mode = preset.schema_mode and os.getenv("LLM_JSON_SCHEMA", "true").lower() not in ("0", "false")',
+                  'self._schema_mode = preset.name != "groq" and preset.schema_mode and os.getenv("LLM_JSON_SCHEMA", "true").lower() not in ("0", "false")',
+              ),
+          ]
 
-          path.write_text(source.replace(old, new, 1), encoding="utf-8")
-          print("Configuración de Groq corregida.")
+          for old, new in replacements:
+              if old not in source:
+                  raise SystemExit(f"No se encontró el código esperado: {old}")
+              source = source.replace(old, new, 1)
 
+          path.write_text(source, encoding="utf-8")
+          print("Configuración de Groq actualizada.")
           PY
-
-      - name: Comprobar configuración
-        run: |
-          set -e
-          test -n "$GROQ_API_KEY"
-          echo "Configuración comprobada."
 
       - name: Generar vídeo
         run: |
+          mkdir -p output_videos
           purffle-shorts make \
             --style explainer \
             --lang es \
@@ -87,12 +93,11 @@ jobs:
             --verbose \
             --topic "El origen de las señales misteriosas del espacio"
 
-      - name: Guardar vídeo para descargar
+      - name: Guardar vídeo generado
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: video-largo-${{ github.run_number }}
+          name: video-largo
           path: output_videos/**/*.mp4
           if-no-files-found: warn
           retention-days: 7
-          
