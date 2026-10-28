@@ -50,7 +50,7 @@ jobs:
           fi
           echo "Clave de Groq configurada."
 
-      - name: Desactivar modos JSON incompatibles en Groq
+      - name: Corregir compatibilidad de Groq y GPT-OSS
         shell: bash
         run: |
           set -e
@@ -70,15 +70,42 @@ jobs:
                   'self._schema_mode = preset.schema_mode and os.getenv("LLM_JSON_SCHEMA", "true").lower() not in ("0", "false")',
                   'self._schema_mode = preset.name != "groq" and preset.schema_mode and os.getenv("LLM_JSON_SCHEMA", "true").lower() not in ("0", "false")',
               ),
+              (
+                  'return bool(re.match(r"^(o\\d|gpt-5)", self.model.split("/")[-1]))',
+                  'return bool(re.match(r"^(o\\d|gpt-5|gpt-oss)", self.model.split("/")[-1]))',
+              ),
           ]
 
           for old, new in replacements:
-              if source.count(old) != 1:
-                  raise SystemExit(f"No se encontró exactamente una vez: {old}")
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(
+                      f"Error: se esperaba encontrar una vez el texto: {old!r}; encontrado: {count}"
+                  )
               source = source.replace(old, new, 1)
 
           path.write_text(source, encoding="utf-8")
-          print("Configuración de Groq actualizada.")
+          print("Compatibilidad de Groq y GPT-OSS corregida.")
+          PY
+
+      - name: Verificar configuración corregida
+        run: |
+          python - <<'PY'
+          import purffle_shorts.llm as llm
+
+          provider = llm.OpenAICompatible(
+              llm.PRESETS["groq"],
+              "openai/gpt-oss-120b",
+              "test-key",
+              llm.PRESETS["groq"].base_url,
+          )
+
+          if not provider._is_reasoning_model():
+              raise SystemExit("ERROR: GPT-OSS no se reconoce como modelo de razonamiento.")
+          if provider._json_mode or provider._schema_mode:
+              raise SystemExit("ERROR: los modos JSON incompatibles siguen activos.")
+
+          print("OK: GPT-OSS reconocido y modos JSON incompatibles desactivados.")
           PY
 
       - name: Generar vídeo
