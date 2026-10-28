@@ -5,18 +5,52 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
   subir-borrador:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Preparar herramientas
+      - name: Encontrar la última ejecución exitosa de YouTube
+        id: latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
+          set -euo pipefail
+
+          DATA=$(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/daily-short.yml/runs?status=success&per_page=10" \
+            --jq '[.workflow_runs[] | select(.head_branch == "main")] | .[0] | if . == null then empty else "\(.id) \(.run_number)" end')
+
+          if [ -z "$DATA" ]; then
+            echo "ERROR: No se encontró una ejecución exitosa de YouTube."
+            exit 1
+          fi
+
+          echo "run_id=$(awk '{print $1}' <<< "$DATA")" >> "$GITHUB_OUTPUT"
+          echo "run_number=$(awk '{print $2}' <<< "$DATA")" >> "$GITHUB_OUTPUT"
+          echo "Ejecución de YouTube encontrada: $DATA"
+
+      - name: Descargar el Short generado por YouTube
+        uses: actions/download-artifact@v4
+        with:
+          name: short-${{ steps.latest.outputs.run_number }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.latest.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: video
+
+      - name: Preparar herramientas
+        shell: bash
+        run: |
+          set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y jq curl
 
@@ -35,7 +69,7 @@ jobs:
           VIDEO=$(find video -type f -name '*.mp4' -print -quit)
 
           if [ -z "$VIDEO" ]; then
-            echo "ERROR: No se encontró ningún MP4 en video/."
+            echo "ERROR: No se encontró ningún MP4 descargado."
             exit 1
           fi
 
@@ -43,6 +77,9 @@ jobs:
             echo "ERROR: Faltan los secretos de Supabase."
             exit 1
           fi
+
+          SIZE=$(stat -c%s "$VIDEO")
+          echo "Vídeo encontrado: $VIDEO ($SIZE bytes)"
 
           HTTP=$(curl -sS -o "$WORK_DIR/supabase.json" -w '%{http_code}' \
             "$SUPABASE_URL/rest/v1/tiktok_tokens?select=access_token&id=eq.1" \
@@ -55,10 +92,12 @@ jobs:
           fi
 
           TOKEN=$(jq -er '.[0].access_token | select(type == "string" and length > 0)' \
-            "$WORK_DIR/supabase.json")
-          rm -f "$WORK_DIR/supabase.json"
+            "$WORK_DIR/supabase.json") || {
+              echo "ERROR: No se encontró el token de TikTok en el registro id=1."
+              exit 1
+            }
 
-          SIZE=$(stat -c%s "$VIDEO")
+          rm -f "$WORK_DIR/supabase.json"
 
           BODY=$(jq -n --argjson size "$SIZE" '{
             source_info: {
@@ -78,8 +117,8 @@ jobs:
           API_CODE=$(jq -r '.error.code // "unknown"' "$WORK_DIR/init.json")
 
           if [ "$HTTP" -lt 200 ] || [ "$HTTP" -ge 300 ] || [ "$API_CODE" != "ok" ]; then
-            echo "ERROR: TikTok rechazó la solicitud."
-            jq -c '{error: .error}' "$WORK_DIR/init.json" || true
+            echo "ERROR: TikTok rechazó la solicitud (HTTP $HTTP)."
+            jq -c '{error: .error}' "$WORK_DIR/init.json" 2>/dev/null || true
             exit 1
           fi
 
@@ -94,12 +133,14 @@ jobs:
             --data-binary "@$VIDEO")
 
           if [ "$HTTP" -lt 200 ] || [ "$HTTP" -ge 300 ]; then
-            echo "ERROR: La carga falló con HTTP $HTTP."
+            echo "ERROR: La carga del vídeo falló con HTTP $HTTP."
             exit 1
           fi
 
           unset TOKEN UPLOAD_URL
-          echo "TikTok aceptó la carga. ID: $PUBLISH_ID"
-          echo "Esto no confirma que el vídeo esté publicado."
-          echo "Comprueba la bandeja de entrada de TikTok."
+
+          echo "TikTok aceptó la carga del vídeo."
+          echo "ID de seguimiento: $PUBLISH_ID"
+          echo "La carga no confirma una publicación pública."
+          echo "Revisa TikTok para completar el proceso de borrador."
           
