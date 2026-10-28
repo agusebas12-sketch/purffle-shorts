@@ -1,4 +1,3 @@
-
 name: Daily Long Mystery Video
 
 on:
@@ -15,10 +14,10 @@ jobs:
     timeout-minutes: 45
 
     env:
-      LLM_PROVIDER: groq
-      LLM_MODEL: openai/gpt-oss-120b
-      LLM_JSON_SCHEMA: "0"
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      LLM_PROVIDER: gemini
+      LLM_MODEL: gemini-2.5-flash
+      LLM_JSON_SCHEMA: "1"
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
 
@@ -41,71 +40,36 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
 
-      - name: Comprobar clave de Groq
+      - name: Comprobar clave de Gemini
         shell: bash
         run: |
-          if [ -z "$GROQ_API_KEY" ]; then
-            echo "Falta el secreto GROQ_API_KEY en GitHub."
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "Falta el secreto GEMINI_API_KEY en GitHub Actions."
             exit 1
           fi
-          echo "Clave de Groq configurada."
+          echo "Clave de Gemini configurada."
 
-      - name: Corregir compatibilidad de Groq y GPT-OSS
-        shell: bash
-        run: |
-          set -e
-          python - <<'PY'
-          from pathlib import Path
-          import purffle_shorts.llm as llm
-
-          path = Path(llm.__file__)
-          source = path.read_text(encoding="utf-8")
-
-          replacements = [
-              (
-                  "self._json_mode = preset.json_mode",
-                  'self._json_mode = preset.json_mode and preset.name != "groq"',
-              ),
-              (
-                  'self._schema_mode = preset.schema_mode and os.getenv("LLM_JSON_SCHEMA", "true").lower() not in ("0", "false")',
-                  'self._schema_mode = preset.name != "groq" and preset.schema_mode and os.getenv("LLM_JSON_SCHEMA", "true").lower() not in ("0", "false")',
-              ),
-              (
-                  'return bool(re.match(r"^(o\\d|gpt-5)", self.model.split("/")[-1]))',
-                  'return bool(re.match(r"^(o\\d|gpt-5|gpt-oss)", self.model.split("/")[-1]))',
-              ),
-          ]
-
-          for old, new in replacements:
-              count = source.count(old)
-              if count != 1:
-                  raise SystemExit(
-                      f"Error: se esperaba encontrar una vez el texto: {old!r}; encontrado: {count}"
-                  )
-              source = source.replace(old, new, 1)
-
-          path.write_text(source, encoding="utf-8")
-          print("Compatibilidad de Groq y GPT-OSS corregida.")
-          PY
-
-      - name: Verificar configuración corregida
+      - name: Verificar configuración de Gemini
         run: |
           python - <<'PY'
-          import purffle_shorts.llm as llm
+          import os
+          from purffle_shorts.llm import PRESETS, OpenAICompatible
 
-          provider = llm.OpenAICompatible(
-              llm.PRESETS["groq"],
-              "openai/gpt-oss-120b",
+          preset = PRESETS["gemini"]
+          provider = OpenAICompatible(
+              preset,
+              os.environ["LLM_MODEL"],
               "test-key",
-              llm.PRESETS["groq"].base_url,
+              preset.base_url,
           )
 
-          if not provider._is_reasoning_model():
-              raise SystemExit("ERROR: GPT-OSS no se reconoce como modelo de razonamiento.")
-          if provider._json_mode or provider._schema_mode:
-              raise SystemExit("ERROR: los modos JSON incompatibles siguen activos.")
+          if not provider._schema_mode:
+              raise SystemExit(
+                  "ERROR: el modo JSON Schema no está activado."
+              )
 
-          print("OK: GPT-OSS reconocido y modos JSON incompatibles desactivados.")
+          print("OK: proveedor Gemini configurado.")
+          print("Modelo:", os.environ["LLM_MODEL"])
           PY
 
       - name: Generar vídeo
@@ -129,4 +93,3 @@ jobs:
           path: output_videos/**/*.mp4
           if-no-files-found: warn
           retention-days: 7
-          
