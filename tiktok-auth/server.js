@@ -10,12 +10,53 @@ const CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY;
 const CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET;
 const REDIRECT_URI = process.env.TIKTOK_REDIRECT_URI;
 const APP_BASE_URL = process.env.APP_BASE_URL;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 
 const pendingStates = new Map();
 
-// Solo para pruebas: la memoria se pierde si Render reinicia el servicio.
-// No publicar vídeos hasta configurar almacenamiento persistente y seguro.
-let tokenData = null;
+function supabaseHeaders() {
+  return {
+    apikey: SUPABASE_SECRET_KEY,
+    Authorization: `Bearer ${SUPABASE_SECRET_KEY}`,
+    "Content-Type": "application/json"
+  };
+}
+
+async function saveTokens(tokens) {
+  if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
+    throw new Error("Falta configurar Supabase en Render.");
+  }
+
+  const url =
+    `${SUPABASE_URL}/rest/v1/tiktok_tokens?on_conflict=id`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      ...supabaseHeaders(),
+      Prefer: "resolution=merge-duplicates,return=minimal"
+    },
+    body: JSON.stringify({
+      id: 1,
+      access_token: tokens.accessToken,
+      refresh_token: tokens.refreshToken,
+      open_id: tokens.openId || null,
+      scope: tokens.scope || null,
+      expires_at: new Date(tokens.expiresAt).toISOString(),
+      refresh_expires_at: new Date(
+        tokens.refreshExpiresAt
+      ).toISOString(),
+      updated_at: new Date().toISOString()
+    })
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    console.error("Error guardando tokens en Supabase:", response.status, detail);
+    throw new Error("No se pudieron guardar los tokens en Supabase.");
+  }
+}
 
 app.get("/", (req, res) => {
   res.send(`
@@ -26,9 +67,7 @@ app.get("/", (req, res) => {
       <title>Purffle Shorts</title>
       <h1>Purffle Shorts</h1>
       <p>Servidor de autorización de TikTok.</p>
-      <p>Estado de conexión: ${
-        tokenData ? "autorización recibida (prueba temporal)" : "pendiente"
-      }</p>
+      <p>La conexión se almacena en Supabase cuando se autoriza correctamente.</p>
       <a href="/auth/tiktok">Conectar con TikTok</a>
     </html>
   `);
@@ -39,7 +78,12 @@ app.get("/health", (req, res) => {
 });
 
 app.get("/auth/tiktok", (req, res) => {
-  if (!CLIENT_KEY || !CLIENT_SECRET || !REDIRECT_URI || !APP_BASE_URL) {
+  if (
+    !CLIENT_KEY ||
+    !CLIENT_SECRET ||
+    !REDIRECT_URI ||
+    !APP_BASE_URL
+  ) {
     return res.status(503).send(
       "Falta configurar una variable de entorno de TikTok en Render."
     );
@@ -72,7 +116,9 @@ app.get("/auth/callback", async (req, res) => {
 
   if (error) {
     return res.status(400).send(
-      `TikTok no autorizó la conexión: ${String(error_description || error)}`
+      `TikTok no autorizó la conexión: ${String(
+        error_description || error
+      )}`
     );
   }
 
@@ -135,17 +181,19 @@ app.get("/auth/callback", async (req, res) => {
       );
     }
 
-    // Almacenamiento temporal solo para comprobar el intercambio OAuth.
-    // No es persistente y aún no permite publicación automática fiable.
-    tokenData = {
+    const tokens = {
       accessToken: result.access_token,
       refreshToken: result.refresh_token,
-      expiresAt: Date.now() + Number(result.expires_in || 0) * 1000,
+      expiresAt:
+        Date.now() + Number(result.expires_in || 0) * 1000,
       refreshExpiresAt:
-        Date.now() + Number(result.refresh_expires_in || 0) * 1000,
+        Date.now() +
+        Number(result.refresh_expires_in || 0) * 1000,
       openId: result.open_id,
       scope: result.scope
     };
+
+    await saveTokens(tokens);
 
     return res.status(200).send(`
       <!doctype html>
@@ -154,15 +202,16 @@ app.get("/auth/callback", async (req, res) => {
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Purffle Shorts</title>
         <h1>Autorización recibida</h1>
-        <p>TikTok devolvió los tokens correctamente.</p>
-        <p>Los tokens están solo en memoria temporal. La conexión persistente y la publicación automática aún no están configuradas.</p>
+        <p>TikTok devolvió los tokens y Supabase confirmó su almacenamiento.</p>
+        <p>La renovación automática y la publicación de vídeos todavía deben configurarse y probarse.</p>
         <a href="/">Volver a Purffle Shorts</a>
       </html>
     `);
   } catch (err) {
-    console.error("Fallo al conectar con TikTok:", err.message);
+    console.error("Fallo al conectar o guardar tokens:", err.message);
+
     return res.status(500).send(
-      "No se pudo completar la conexión. Inténtalo de nuevo más tarde."
+      "No se pudo completar la conexión o guardar los tokens. Revisa los registros de Render."
     );
   }
 });
