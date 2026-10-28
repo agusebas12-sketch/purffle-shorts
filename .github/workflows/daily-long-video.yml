@@ -1,3 +1,4 @@
+
 name: Daily Long Mystery Video
 
 on:
@@ -26,7 +27,7 @@ jobs:
 
     env:
       LLM_PROVIDER: groq
-      LLM_MODEL: openai/gpt-oss-120b
+      LLM_MODEL: llama-3.3-70b-versatile
       LLM_JSON_SCHEMA: "0"
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
@@ -53,84 +54,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install .
 
-      - name: Configurar JSON y longitud del guion
-        shell: bash
-        run: |
-          set -e
-          python - <<'PY'
-          from pathlib import Path
-          import purffle_shorts.llm as llm
-          import purffle_shorts.script as script
-
-          # Activar el modo JSON compatible de Groq.
-          llm_path = Path(llm.__file__)
-          llm_source = llm_path.read_text(encoding="utf-8")
-
-          old_llm = '''Preset("groq", "Groq (Llama, fast)", "https://api.groq.com/openai/v1", ("GROQ_API_KEY",),
-                     "llama-3.3-70b-versatile"),'''
-
-          new_llm = '''Preset("groq", "Groq (Llama, fast)", "https://api.groq.com/openai/v1", ("GROQ_API_KEY",),
-                     "llama-3.3-70b-versatile", json_mode=True),'''
-
-          if old_llm not in llm_source:
-              raise SystemExit("No se encontró la definición esperada de Groq.")
-
-          llm_path.write_text(
-              llm_source.replace(old_llm, new_llm, 1),
-              encoding="utf-8"
-          )
-
-          # Reintentar guiones que no alcancen el 75 % de las palabras objetivo.
-          script_path = Path(script.__file__)
-          script_source = script_path.read_text(encoding="utf-8")
-
-          old_script = '''    data = llm.complete_json(system, user, SCRIPT_SCHEMA)
-              script = normalize(data, subject, style, settings.language)'''
-
-          new_script = '''    target_words = scene_plan(style, settings.target_seconds)[0]
-              data = llm.complete_json(system, user, SCRIPT_SCHEMA)
-              script = normalize(data, subject, style, settings.language)
-
-              for attempt in range(2):
-                  actual_words = word_count(script.narration, settings.language)
-                  minimum_words = int(target_words * 0.75)
-
-                  if actual_words >= minimum_words:
-                      break
-
-                  log.warning(
-                      "Guion demasiado corto: %d palabras; objetivo mínimo %d. "
-                      "Reintentando (%d/2).",
-                      actual_words, minimum_words, attempt + 1
-                  )
-
-                  retry_user = user + (
-                      "\\n\\nREQUISITO OBLIGATORIO DE LONGITUD: "
-                      f"Tu respuesta anterior fue demasiado corta. "
-                      f"Escribe al menos {minimum_words} palabras de narración "
-                      f"repartidas en las escenas para un vídeo de "
-                      f"{settings.target_seconds} segundos. "
-                      "No reduzcas la cantidad de escenas ni resumas el tema. "
-                      "Devuelve el objeto JSON completo."
-                  )
-
-                  data = llm.complete_json(system, retry_user, SCRIPT_SCHEMA)
-                  script = normalize(data, subject, style, settings.language)'''
-
-          if old_script not in script_source:
-              raise SystemExit(
-                  "No se encontró el bloque esperado de generación del guion."
-              )
-
-          script_path.write_text(
-              script_source.replace(old_script, new_script, 1),
-              encoding="utf-8"
-          )
-
-          print("Modo JSON compatible activado.")
-          print("Reintentos por guion corto configurados.")
-          PY
-
       - name: Comprobar configuración
         shell: bash
         run: |
@@ -145,7 +68,6 @@ jobs:
           echo "Proveedor: $LLM_PROVIDER"
           echo "Modelo: $LLM_MODEL"
           echo "Duración objetivo: 170 segundos"
-          echo "Duración mínima aceptada: 120 segundos"
           echo "Publicación automática desactivada."
 
       - name: Generar vídeo de 170 segundos
@@ -197,3 +119,4 @@ jobs:
           path: output_videos/**/*.mp4
           if-no-files-found: warn
           retention-days: 7
+          
