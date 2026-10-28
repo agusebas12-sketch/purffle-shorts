@@ -27,7 +27,7 @@ jobs:
 
     env:
       LLM_PROVIDER: groq
-      LLM_MODEL: openai/gpt-oss-20b
+      LLM_MODEL: llama-3.3-70b-versatile
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
