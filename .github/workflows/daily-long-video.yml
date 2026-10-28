@@ -1,3 +1,4 @@
+
 name: Daily Long Mystery Video
 
 on:
@@ -15,7 +16,7 @@ jobs:
 
     env:
       LLM_PROVIDER: groq
-      LLM_MODEL: llama-3.3-70b-versatile
+      LLM_MODEL: openai/gpt-oss-120b
       LLM_JSON_SCHEMA: "0"
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
@@ -101,3 +102,4 @@ jobs:
           path: output_videos/**/*.mp4
           if-no-files-found: warn
           retention-days: 7
+          
