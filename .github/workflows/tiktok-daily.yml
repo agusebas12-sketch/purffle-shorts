@@ -1,0 +1,16 @@
+
+name: TikTok Daily
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  comprobar-configuracion:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comprobar que el workflow funciona
+        run: echo "TikTok preparado para configurar. No se publica ningún vídeo."
+        
