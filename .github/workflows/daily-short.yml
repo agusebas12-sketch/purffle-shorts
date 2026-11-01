@@ -1,5 +1,5 @@
 
-name: Daily Spanish Short
+name: Daily AI Tools Short
 
 on:
   schedule:
@@ -20,31 +20,31 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Choose today's topic
+      - name: Choose today's AI topic
         id: topic
         shell: bash
         run: |
           topics=(
-            "animales sorprendentes"
-            "misterios del océano"
-            "curiosidades científicas"
-            "misterios del espacio"
-            "civilizaciones antiguas"
-            "inventos que cambiaron el mundo"
-            "el cuerpo humano"
-            "psicología cotidiana"
-            "inteligencia artificial y tecnología"
-            "fenómenos naturales"
-            "enigmas históricos"
-            "lugares extraordinarios"
-            "experimentos científicos"
-            "mitos explicados por la ciencia"
-            "descubrimientos arqueológicos"
-            "ingeniería sorprendente"
-            "curiosidades sobre alimentos"
-            "récords extraordinarios"
-            "misterios de la Tierra"
-            "historias de supervivencia"
+            "herramientas de IA gratuitas"
+            "trucos poco conocidos de ChatGPT"
+            "IA para crear imágenes"
+            "IA para editar vídeos desde el móvil"
+            "herramientas de IA para estudiar"
+            "IA para mejorar fotografías"
+            "prompts útiles para ChatGPT"
+            "IA para resumir documentos"
+            "herramientas de IA para trabajar"
+            "IA para crear presentaciones"
+            "aplicaciones de IA para Android"
+            "IA para generar música"
+            "herramientas de IA para redes sociales"
+            "trucos para obtener mejores respuestas de ChatGPT"
+            "IA para traducir idiomas"
+            "herramientas de IA para organizar tareas"
+            "IA para crear logos y diseños"
+            "automatizaciones sencillas con IA"
+            "IA para transcribir audio"
+            "nuevas herramientas de inteligencia artificial"
           )
 
           day=$(date -u +%j)
@@ -89,7 +89,7 @@ jobs:
       - name: Install PurffleShorts
         run: python -m pip install .
 
-      - name: Generate and upload Spanish Short
+      - name: Generate and upload Spanish AI Short
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
