@@ -4,7 +4,7 @@ name: Instagram Daily
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Daily Spanish Short"]
+    workflows: ["Daily AI Tools Short"]
     types: [completed]
     branches: [main]
 
