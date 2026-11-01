@@ -1,0 +1,210 @@
+
+name: Instagram Long Tech Video
+
+on:
+  workflow_run:
+    workflows: ["Daily Long Tech and AI Video"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  publicar-reel:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Descargar vídeo tecnológico de YouTube
+        uses: actions/download-artifact@v4
+        with:
+          name: video-tecnologia-${{ github.event.workflow_run.run_number }}
+          repository: agusebas12-sketch/purffle-shorts
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: video
+
+      - name: Comprobar vídeo descargado
+        id: video
+        shell: bash
+        run: |
+          set -e
+
+          VIDEO=$(find video -type f -name '*.mp4' -print -quit)
+
+          if [ -z "$VIDEO" ]; then
+            echo "ERROR: No se encontró el vídeo MP4."
+            exit 1
+          fi
+
+          echo "path=$VIDEO" >> "$GITHUB_OUTPUT"
+          ls -lh "$VIDEO"
+
+      - name: Subir vídeo a Cloudinary
+        id: cloudinary
+        timeout-minutes: 5
+        env:
+          CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          VIDEO: ${{ steps.video.outputs.path }}
+        shell: bash
+        run: |
+          set -e
+
+          test -n "$CLOUD_NAME" || {
+            echo "Falta CLOUDINARY_CLOUD_NAME"
+            exit 1
+          }
+
+          test -n "$API_KEY" || {
+            echo "Falta CLOUDINARY_API_KEY"
+            exit 1
+          }
+
+          test -n "$API_SECRET" || {
+            echo "Falta CLOUDINARY_API_SECRET"
+            exit 1
+          }
+
+          RESPONSE=$(curl -sS \
+            --connect-timeout 20 \
+            --max-time 240 \
+            --user "$API_KEY:$API_SECRET" \
+            -X POST \
+            -F "file=@$VIDEO" \
+            -F "resource_type=video" \
+            -w '\nHTTP_STATUS:%{http_code}' \
+            "https://api.cloudinary.com/v1_1/$CLOUD_NAME/video/upload")
+
+          HTTP_STATUS=$(printf '%s\n' "$RESPONSE" | sed -n 's/^HTTP_STATUS://p')
+          BODY=$(printf '%s\n' "$RESPONSE" | sed '/^HTTP_STATUS:/d')
+
+          echo "HTTP Cloudinary: $HTTP_STATUS"
+
+          if [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
+            echo "ERROR al subir el vídeo a Cloudinary."
+            echo "$BODY"
+            exit 1
+          fi
+
+          URL=$(python -c 'import json,sys; print(json.load(sys.stdin).get("secure_url",""))' <<< "$BODY")
+
+          if [ -z "$URL" ]; then
+            echo "Cloudinary no devolvió una URL válida."
+            exit 1
+          fi
+
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Vídeo alojado correctamente."
+
+      - name: Crear Reel en Instagram
+        id: reel
+        timeout-minutes: 3
+        env:
+          IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          IG_USER_ID: "17841424470871658"
+          VIDEO_URL: ${{ steps.cloudinary.outputs.url }}
+        shell: bash
+        run: |
+          set -e
+
+          test -n "$IG_TOKEN" || {
+            echo "Falta INSTAGRAM_ACCESS_TOKEN"
+            exit 1
+          }
+
+          RESPONSE=$(curl -sS \
+            --connect-timeout 20 \
+            --max-time 90 \
+            -X POST \
+            --data-urlencode "media_type=REELS" \
+            --data-urlencode "video_url=$VIDEO_URL" \
+            --data-urlencode "caption=Trucos de tecnología e inteligencia artificial que pueden facilitarte la vida. ¿Cuál conocías? #tecnologia #inteligenciaartificial #IA #ChatGPT #Android" \
+            --data-urlencode "access_token=$IG_TOKEN" \
+            "https://graph.instagram.com/v23.0/$IG_USER_ID/media")
+
+          echo "Respuesta de Instagram:"
+          echo "$RESPONSE"
+
+          ID=$(python -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' <<< "$RESPONSE")
+
+          if [ -z "$ID" ]; then
+            echo "Instagram no confirmó la creación del Reel."
+            exit 1
+          fi
+
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+          echo "Reel creado: $ID"
+
+      - name: Esperar procesamiento de Instagram
+        timeout-minutes: 6
+        env:
+          IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          CREATION_ID: ${{ steps.reel.outputs.id }}
+        shell: bash
+        run: |
+          set -e
+
+          for i in $(seq 1 20); do
+            RESPONSE=$(curl -sS \
+              --connect-timeout 20 \
+              --max-time 60 \
+              -G \
+              --data-urlencode "fields=status_code" \
+              --data-urlencode "access_token=$IG_TOKEN" \
+              "https://graph.instagram.com/v23.0/$CREATION_ID")
+
+            echo "Comprobación $i: $RESPONSE"
+
+            STATUS=$(python -c 'import json,sys; print(json.load(sys.stdin).get("status_code",""))' <<< "$RESPONSE")
+
+            if [ "$STATUS" = "FINISHED" ]; then
+              echo "Instagram terminó de procesar el vídeo."
+              exit 0
+            fi
+
+            if [ "$STATUS" = "ERROR" ]; then
+              echo "Instagram informó un error de procesamiento."
+              exit 1
+            fi
+
+            sleep 15
+          done
+
+          echo "Instagram no terminó el procesamiento a tiempo."
+          exit 1
+
+      - name: Publicar Reel
+        timeout-minutes: 3
+        env:
+          IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          IG_USER_ID: "17841424470871658"
+          CREATION_ID: ${{ steps.reel.outputs.id }}
+        shell: bash
+        run: |
+          set -e
+
+          RESPONSE=$(curl -sS \
+            --connect-timeout 20 \
+            --max-time 90 \
+            -X POST \
+            --data-urlencode "creation_id=$CREATION_ID" \
+            --data-urlencode "access_token=$IG_TOKEN" \
+            "https://graph.instagram.com/v23.0/$IG_USER_ID/media_publish")
+
+          echo "Respuesta de publicación:"
+          echo "$RESPONSE"
+
+          ID=$(python -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' <<< "$RESPONSE")
+
+          if [ -z "$ID" ]; then
+            echo "Instagram no confirmó la publicación."
+            exit 1
+          fi
+
+          echo "REEL PUBLICADO CORRECTAMENTE. ID: $ID"
+          
