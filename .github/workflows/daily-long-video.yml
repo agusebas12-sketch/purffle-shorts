@@ -1,10 +1,12 @@
-name: Daily Long Mystery Video
+
+name: Daily Long Tech and AI Video
 
 on:
   workflow_dispatch:
   schedule:
-    # 13:00 y 20:00 hora peninsular española (invierno)
-    - cron: "0 12,19 * * *"
+    # 13:00 y 20:00 hora peninsular española.
+    # Se contemplan los horarios UTC de verano e invierno.
+    - cron: "0 11,12,18,19 * * *"
 
 permissions:
   contents: read
@@ -23,34 +25,48 @@ jobs:
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
 
     steps:
-      - name: Descargar repositorio
-        uses: actions/checkout@v4
-
-      - name: Elegir tema
+      - name: Elegir tema de tecnología e IA
         id: topic
         shell: bash
         run: |
           topics=(
-            "El misterio de las señales de radio que llegan desde el espacio"
-            "Lugares de la Tierra donde ocurren fenómenos inexplicables"
-            "La historia real detrás de una desaparición misteriosa"
-            "Descubrimientos arqueológicos que todavía desconciertan"
-            "Fenómenos naturales que parecen imposibles"
-            "Mensajes y señales misteriosas que nadie ha podido explicar"
-            "Misterios del océano que siguen sin resolverse"
-            "Objetos antiguos cuyo origen sigue siendo un enigma"
-            "Extraños sucesos históricos documentados"
-            "Misterios del universo que intrigan a los científicos"
-            "Civilizaciones antiguas y sus secretos"
-            "Casos curiosos que cambiaron la historia"
-            "Fenómenos extraños observados en distintos países"
-            "Enigmas científicos que todavía buscan respuesta"
+            "Cómo aprovechar ChatGPT para trabajar y estudiar mejor"
+            "Trucos útiles de Android que mucha gente desconoce"
+            "Herramientas gratuitas de inteligencia artificial"
+            "Cómo crear imágenes con inteligencia artificial"
+            "Funciones de ChatGPT que ahorran tiempo"
+            "Cómo proteger tu móvil de aplicaciones peligrosas"
+            "Aplicaciones gratuitas que merece la pena conocer"
+            "Cómo automatizar tareas repetitivas con IA"
+            "Trucos para mejorar la seguridad de tus cuentas"
+            "Cómo usar la inteligencia artificial para aprender"
+            "Herramientas de IA para crear vídeos desde el móvil"
+            "Cómo detectar imágenes y vídeos falsos creados con IA"
+            "Funciones ocultas de Google que pueden ayudarte"
+            "Cómo mejorar la privacidad de tu teléfono Android"
+            "Trucos para sacar más partido a WhatsApp"
+            "Cómo crear textos profesionales con inteligencia artificial"
+            "Herramientas gratuitas para editar vídeos desde Android"
+            "Cómo organizar tu trabajo usando ChatGPT"
+            "Errores que debes evitar al usar inteligencia artificial"
+            "Novedades tecnológicas explicadas de forma sencilla"
           )
 
-          day=$(date -u +%j)
-          hour=$(date -u +%H)
+          hour=$(TZ=Europe/Madrid date +%H)
 
-          if (( 10#$hour < 15 )); then
+          if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
+            if [[ "$hour" != "13" && "$hour" != "20" ]]; then
+              echo "run=false" >> "$GITHUB_OUTPUT"
+              echo "Ejecución fuera del horario español. Se omite."
+              exit 0
+            fi
+          fi
+
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
+          day=$(TZ=Europe/Madrid date +%j)
+
+          if (( 10#$hour < 17 )); then
             slot=0
           else
             slot=1
@@ -62,17 +78,24 @@ jobs:
           echo "topic=$topic" >> "$GITHUB_OUTPUT"
           echo "Tema elegido: $topic"
 
+      - name: Descargar repositorio
+        if: steps.topic.outputs.run == 'true'
+        uses: actions/checkout@v4
+
       - name: Instalar Python
+        if: steps.topic.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Instalar FFmpeg
+        if: steps.topic.outputs.run == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
       - name: Restaurar autorización de YouTube
+        if: steps.topic.outputs.run == 'true'
         env:
           YOUTUBE_TOKEN_JSON_B64: ${{ secrets.YOUTUBE_TOKEN_JSON_B64 }}
         run: |
@@ -86,18 +109,21 @@ jobs:
           chmod 600 "$RUNNER_TEMP/token.json"
 
       - name: Instalar Purffle Shorts
+        if: steps.topic.outputs.run == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -e .
 
       - name: Comprobar Gemini
+        if: steps.topic.outputs.run == 'true'
         run: |
           test -n "$GEMINI_API_KEY" || {
             echo "Falta GEMINI_API_KEY"
             exit 1
           }
 
-      - name: Generar y publicar vídeo normal de 120 segundos
+      - name: Generar y publicar vídeo tecnológico horizontal
+        if: steps.topic.outputs.run == 'true'
         shell: bash
         env:
           UPLOAD: "true"
@@ -115,7 +141,7 @@ jobs:
             if purffle-shorts make \
               --style explainer \
               --lang es \
-              --duration 120 \
+              --duration 172 \
               --aspect 16:9 \
               --visuals pixabay \
               --verbose \
@@ -135,10 +161,11 @@ jobs:
           exit 1
 
       - name: Guardar vídeo generado
-        if: always()
+        if: always() && steps.topic.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: video-largo-${{ github.run_number }}
+          name: video-tecnologia-${{ github.run_number }}
           path: output_videos/**/*.mp4
           if-no-files-found: warn
           retention-days: 7
+          
