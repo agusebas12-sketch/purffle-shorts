@@ -3,7 +3,8 @@ name: Daily Long Mystery Video
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 18 * * *"
+    # 13:00 y 20:00 hora peninsular española (invierno)
+    - cron: "0 12,19 * * *"
 
 permissions:
   contents: read
@@ -11,11 +12,11 @@ permissions:
 jobs:
   generar-video:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     env:
       LLM_PROVIDER: gemini
-      LLM_MODEL: gemini-3.8-flash
+      LLM_MODEL: gemini-3.5-flash-lite
       LLM_JSON_SCHEMA: "1"
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
@@ -24,6 +25,42 @@ jobs:
     steps:
       - name: Descargar repositorio
         uses: actions/checkout@v4
+
+      - name: Elegir tema
+        id: topic
+        shell: bash
+        run: |
+          topics=(
+            "El misterio de las señales de radio que llegan desde el espacio"
+            "Lugares de la Tierra donde ocurren fenómenos inexplicables"
+            "La historia real detrás de una desaparición misteriosa"
+            "Descubrimientos arqueológicos que todavía desconciertan"
+            "Fenómenos naturales que parecen imposibles"
+            "Mensajes y señales misteriosas que nadie ha podido explicar"
+            "Misterios del océano que siguen sin resolverse"
+            "Objetos antiguos cuyo origen sigue siendo un enigma"
+            "Extraños sucesos históricos documentados"
+            "Misterios del universo que intrigan a los científicos"
+            "Civilizaciones antiguas y sus secretos"
+            "Casos curiosos que cambiaron la historia"
+            "Fenómenos extraños observados en distintos países"
+            "Enigmas científicos que todavía buscan respuesta"
+          )
+
+          day=$(date -u +%j)
+          hour=$(date -u +%H)
+
+          if (( 10#$hour < 15 )); then
+            slot=0
+          else
+            slot=1
+          fi
+
+          index=$(( ((10#$day - 1) * 2 + slot) % ${#topics[@]} ))
+          topic="${topics[$index]}"
+
+          echo "topic=$topic" >> "$GITHUB_OUTPUT"
+          echo "Tema elegido: $topic"
 
       - name: Instalar Python
         uses: actions/setup-python@v5
@@ -35,79 +72,73 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
+      - name: Restaurar autorización de YouTube
+        env:
+          YOUTUBE_TOKEN_JSON_B64: ${{ secrets.YOUTUBE_TOKEN_JSON_B64 }}
+        run: |
+          test -n "$YOUTUBE_TOKEN_JSON_B64" || {
+            echo "Falta YOUTUBE_TOKEN_JSON_B64"
+            exit 1
+          }
+
+          printf '%s' "$YOUTUBE_TOKEN_JSON_B64" | base64 --decode > "$RUNNER_TEMP/token.json"
+          python -m json.tool "$RUNNER_TEMP/token.json" > /dev/null
+          chmod 600 "$RUNNER_TEMP/token.json"
+
       - name: Instalar Purffle Shorts
         run: |
           python -m pip install --upgrade pip
           pip install -e .
 
-      - name: Comprobar clave de Gemini
-        shell: bash
+      - name: Comprobar Gemini
         run: |
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo "Falta el secreto GEMINI_API_KEY en GitHub Actions."
+          test -n "$GEMINI_API_KEY" || {
+            echo "Falta GEMINI_API_KEY"
             exit 1
-          fi
-          echo "Clave de Gemini configurada."
+          }
 
-      - name: Verificar configuración de Gemini
-        run: |
-          python - <<'PY'
-          import os
-          from purffle_shorts.llm import PRESETS, OpenAICompatible
-
-          preset = PRESETS["gemini"]
-          provider = OpenAICompatible(
-              preset,
-              os.environ["LLM_MODEL"],
-              "test-key",
-              preset.base_url,
-          )
-
-          if not provider._schema_mode:
-              raise SystemExit(
-                  "ERROR: el modo JSON Schema no está activado."
-              )
-
-          print("OK: proveedor Gemini configurado.")
-          print("Modelo:", os.environ["LLM_MODEL"])
-          PY
-
-      - name: Generar vídeo con reintentos
+      - name: Generar y publicar vídeo normal de 120 segundos
         shell: bash
+        env:
+          UPLOAD: "true"
+          PUBLISH_TO: "youtube"
+          YT_TOKEN_FILE: ${{ runner.temp }}/token.json
+          KEEP_VIDEOS: "true"
+          PYTHONUNBUFFERED: "1"
         run: |
           set -e
           mkdir -p output_videos
 
           for intento in 1 2 3; do
-            echo "Intento $intento de 3..."
+            echo "Intento $intento de 3"
 
             if purffle-shorts make \
               --style explainer \
               --lang es \
-              --duration 170 \
+              --duration 120 \
               --aspect 16:9 \
               --visuals pixabay \
-              --no-upload \
               --verbose \
-              --topic "El origen de las señales misteriosas del espacio"; then
-              echo "Generación completada."
+              --topic "${{ steps.topic.outputs.topic }}"; then
+
+              echo "Generación y publicación completadas."
               exit 0
             fi
 
             if [ "$intento" -lt 3 ]; then
-              echo "Esperando 30 segundos antes de reintentar..."
-              sleep 30
+              echo "Esperando 60 segundos..."
+              sleep 60
             fi
           done
 
-          echo "ERROR: la generación falló después de tres intentos."
+          echo "ERROR: fallaron los tres intentos."
           exit 1
 
       - name: Guardar vídeo generado
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: video-largo
+          name: video-largo-${{ github.run_number }}
           path: output_videos/**/*.mp4
           if-no-files-found: warn
           retention-days: 7
