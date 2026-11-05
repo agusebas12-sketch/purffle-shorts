@@ -1,0 +1,22 @@
+PURFFLE SHORTS — SITIO WEB PARA GITHUB PAGES
+
+Contenido:
+- index.html: página principal
+- privacy.html: política de privacidad
+- terms.html: términos de servicio
+- styles.css: estilos
+- logo.svg y favicon.svg: identidad gráfica compartida
+
+ANTES DE ENVIAR A TIKTOK:
+1. Los documentos ya incluyen el correo agusebas12@gmail.com y el responsable Sebastian Agüero (proyecto Purffle Shorts). Comprueba que esos datos sean correctos antes de publicar.
+3. Revisa la política de privacidad para que describa exactamente los datos que procesa TU versión de Purffle Shorts y las integraciones activadas. No publiques afirmaciones que no sean ciertas.
+4. El logo.svg/fav icon incluidos son una propuesta nueva inspirada en la descripción visual disponible. Para cumplir el requisito de TikTok, utiliza exactamente el mismo archivo/icono en TikTok Developer y en la web. Si la app ya tiene otro logo, reemplaza ambos SVG por la versión correcta.
+5. Sube estos archivos a la raíz de la rama/carpeta que GitHub Pages publica. No reemplaces ni borres workflows, scripts ni archivos de generación.
+6. Comprueba:
+   https://agusebas12-sketch.github.io/purffle-shorts/
+   https://agusebas12-sketch.github.io/purffle-shorts/privacy.html
+   https://agusebas12-sketch.github.io/purffle-shorts/terms.html
+7. Abre los tres enlaces en una ventana privada y comprueba que carguen sin iniciar sesión.
+
+IMPORTANTE:
+Esta carpeta no modifica el repositorio automáticamente. Sube únicamente los archivos indicados, sin sobrescribir archivos existentes con el mismo nombre sin revisarlos.
