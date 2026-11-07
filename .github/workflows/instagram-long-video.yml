@@ -1,184 +1,139 @@
-name: Instagram Long Tech Video
+name: Instagram Real Stories Documentary
 
 on:
-workflow_dispatch:
-workflow_run:
-workflows: ["Daily Long Tech and AI Video"]
-types: [completed]
-branches: [main]
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Daily Real Stories Documentary"]
+    types: [completed]
+    branches: [main]
 
 permissions:
-actions: read
-contents: read
+  actions: read
+  contents: read
 
 jobs:
-publicar-reel:
-if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-runs-on: ubuntu-latest
-timeout-minutes: 20
+  publicar-reel:
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
 
-steps:
-  - name: Descargar vídeo tecnológico de YouTube
-    if: github.event_name == 'workflow_run'
-    uses: actions/download-artifact@v4
-    with:
-      name: video-historias-reales-${{ github.event.workflow_run.run_number }}
-      repository: agusebas12-sketch/purffle-shorts
-      run-id: ${{ github.event.workflow_run.id }}
-      github-token: ${{ secrets.GITHUB_TOKEN }}
-      path: video
+    steps:
+      - name: Descargar documental de YouTube
+        uses: actions/download-artifact@v4
+        with:
+          name: video-historias-reales-${{ github.event.workflow_run.run_number }}
+          repository: agusebas12-sketch/purffle-shorts
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: video
 
-  - name: Buscar y comprobar vídeo
-    id: video
-    shell: bash
-    run: |
-      set -e
+      - name: Buscar y comprobar vídeo
+        id: video
+        shell: bash
+        run: |
+          set -e
+          VIDEO=$(find video -type f -iname '*.mp4' -print -quit)
+          if [ -z "$VIDEO" ]; then
+            echo "::error::No se encontró el vídeo MP4."
+            find video -type f || true
+            exit 1
+          fi
+          echo "path=$VIDEO" >> "$GITHUB_OUTPUT"
+          ls -lh "$VIDEO"
 
-      VIDEO=$(find video -type f -iname '*.mp4' -print -quit 2>/dev/null || true)
+      - name: Subir vídeo a Cloudinary
+        id: cloudinary
+        timeout-minutes: 8
+        env:
+          CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          VIDEO: ${{ steps.video.outputs.path }}
+        shell: bash
+        run: |
+          set -e
+          test -n "$CLOUD_NAME" || { echo "::error::Falta CLOUDINARY_CLOUD_NAME"; exit 1; }
+          test -n "$API_KEY" || { echo "::error::Falta CLOUDINARY_API_KEY"; exit 1; }
+          test -n "$API_SECRET" || { echo "::error::Falta CLOUDINARY_API_SECRET"; exit 1; }
+          test -f "$VIDEO" || { echo "::error::No existe el archivo de vídeo"; exit 1; }
+          RESPONSE=$(curl -sS --connect-timeout 30 --max-time 420 \
+            --user "$API_KEY:$API_SECRET" -X POST \
+            -F "file=@$VIDEO" -F "resource_type=video" \
+            -w '\nHTTP_STATUS:%{http_code}' \
+            "https://api.cloudinary.com/v1_1/$CLOUD_NAME/video/upload")
+          HTTP_STATUS=$(printf '%s\n' "$RESPONSE" | sed -n 's/^HTTP_STATUS://p')
+          BODY=$(printf '%s\n' "$RESPONSE" | sed '/^HTTP_STATUS:/d')
+          if [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
+            echo "::error::Error al subir a Cloudinary"
+            echo "$BODY"
+            exit 1
+          fi
+          URL=$(python -c 'import json,sys; print(json.loads(sys.stdin.read()).get("secure_url",""))' <<< "$BODY")
+          test -n "$URL" || { echo "::error::Cloudinary no devolvió URL"; exit 1; }
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Vídeo subido correctamente."
 
-      if [ -z "$VIDEO" ]; then
-        echo "::error::No se encontró el vídeo MP4."
-        echo "Archivos encontrados:"
-        find video -type f 2>/dev/null || true
-        exit 1
-      fi
+      - name: Crear Reel documental en Instagram
+        id: reel
+        timeout-minutes: 5
+        env:
+          IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          IG_USER_ID: "17841424470871658"
+          VIDEO_URL: ${{ steps.cloudinary.outputs.url }}
+        shell: bash
+        run: |
+          set -e
+          test -n "$IG_TOKEN" || { echo "::error::Falta INSTAGRAM_ACCESS_TOKEN"; exit 1; }
+          RESPONSE=$(curl -sS --connect-timeout 30 --max-time 180 -X POST \
+            --data-urlencode "media_type=REELS" \
+            --data-urlencode "video_url=$VIDEO_URL" \
+            --data-urlencode "caption=Historias reales, sucesos inexplicables y documentales que reconstruyen lo ocurrido. ¿Cuál te sorprendió más? #historiasreales #documentales #misterios #historia" \
+            --data-urlencode "access_token=$IG_TOKEN" \
+            "https://graph.instagram.com/v23.0/$IG_USER_ID/media")
+          echo "$RESPONSE"
+          ID=$(python -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' <<< "$RESPONSE")
+          test -n "$ID" || { echo "::error::Instagram no creó el Reel"; exit 1; }
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
 
-      echo "path=$VIDEO" >> "$GITHUB_OUTPUT"
-      ls -lh "$VIDEO"
-
-  - name: Subir vídeo a Cloudinary
-    id: cloudinary
-    timeout-minutes: 8
-    env:
-      CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
-      API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
-      API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
-      VIDEO: ${{ steps.video.outputs.path }}
-    shell: bash
-    run: |
-      set -e
-
-      test -n "$CLOUD_NAME" || { echo "::error::Falta CLOUDINARY_CLOUD_NAME"; exit 1; }
-      test -n "$API_KEY" || { echo "::error::Falta CLOUDINARY_API_KEY"; exit 1; }
-      test -n "$API_SECRET" || { echo "::error::Falta CLOUDINARY_API_SECRET"; exit 1; }
-      test -f "$VIDEO" || { echo "::error::No existe el archivo de vídeo"; exit 1; }
-
-      RESPONSE=$(curl -sS \
-        --connect-timeout 30 \
-        --max-time 420 \
-        --user "$API_KEY:$API_SECRET" \
-        -X POST \
-        -F "file=@$VIDEO" \
-        -F "resource_type=video" \
-        -w '\nHTTP_STATUS:%{http_code}' \
-        "https://api.cloudinary.com/v1_1/$CLOUD_NAME/video/upload")
-
-      HTTP_STATUS=$(printf '%s\n' "$RESPONSE" | sed -n 's/^HTTP_STATUS://p')
-      BODY=$(printf '%s\n' "$RESPONSE" | sed '/^HTTP_STATUS:/d')
-
-      if [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
-        echo "::error::Error al subir a Cloudinary"
-        echo "$BODY"
-        exit 1
-      fi
-
-      URL=$(python -c 'import json,sys; print(json.load(sys.stdin).get("secure_url",""))' <<< "$BODY")
-
-      test -n "$URL" || { echo "::error::Cloudinary no devolvió URL"; exit 1; }
-
-      echo "url=$URL" >> "$GITHUB_OUTPUT"
-      echo "Vídeo subido correctamente."
-
-  - name: Crear Reel en Instagram
-    id: reel
-    timeout-minutes: 5
-    env:
-      IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
-      IG_USER_ID: "17841424470871658"
-      VIDEO_URL: ${{ steps.cloudinary.outputs.url }}
-    shell: bash
-    run: |
-      set -e
-
-      test -n "$IG_TOKEN" || { echo "::error::Falta INSTAGRAM_ACCESS_TOKEN"; exit 1; }
-
-      RESPONSE=$(curl -sS \
-        --connect-timeout 30 \
-        --max-time 180 \
-        -X POST \
-        --data-urlencode "media_type=REELS" \
-        --data-urlencode "video_url=$VIDEO_URL" \
-        --data-urlencode "caption=Historias reales que parecen increíbles, misterios documentados y documentales que invitan a descubrir qué ocurrió. ¿Cuál te sorprendió más? #historiasreales #documentales #misterios #historia" \
-        --data-urlencode "access_token=$IG_TOKEN" \
-        "https://graph.instagram.com/v23.0/$IG_USER_ID/media")
-
-      echo "$RESPONSE"
-
-      ID=$(python -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' <<< "$RESPONSE")
-
-      test -n "$ID" || { echo "::error::Instagram no creó el Reel"; exit 1; }
-
-      echo "id=$ID" >> "$GITHUB_OUTPUT"
-
-  - name: Esperar procesamiento de Instagram
-    timeout-minutes: 8
-    env:
-      IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
-      CREATION_ID: ${{ steps.reel.outputs.id }}
-    shell: bash
-    run: |
-      set -e
-
-      for i in $(seq 1 24); do
-        RESPONSE=$(curl -sS \
-          --connect-timeout 30 \
-          --max-time 90 \
-          -G \
-          --data-urlencode "fields=status_code,status" \
-          --data-urlencode "access_token=$IG_TOKEN" \
-          "https://graph.instagram.com/v23.0/$CREATION_ID")
-
-        echo "Comprobación $i: $RESPONSE"
-
-        STATUS=$(python -c 'import json,sys; print(json.load(sys.stdin).get("status_code",""))' <<< "$RESPONSE")
-
-        if [ "$STATUS" = "FINISHED" ]; then
-          exit 0
-        fi
-
-        if [ "$STATUS" = "ERROR" ]; then
-          echo "::error::Instagram informó un error"
+      - name: Esperar procesamiento de Instagram
+        timeout-minutes: 8
+        env:
+          IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          CREATION_ID: ${{ steps.reel.outputs.id }}
+        shell: bash
+        run: |
+          set -e
+          for i in $(seq 1 24); do
+            RESPONSE=$(curl -sS --connect-timeout 30 --max-time 90 -G \
+              --data-urlencode "fields=status_code,status" \
+              --data-urlencode "access_token=$IG_TOKEN" \
+              "https://graph.instagram.com/v23.0/$CREATION_ID")
+            echo "Comprobación $i: $RESPONSE"
+            STATUS=$(python -c 'import json,sys; print(json.load(sys.stdin).get("status_code",""))' <<< "$RESPONSE")
+            if [ "$STATUS" = "FINISHED" ]; then exit 0; fi
+            if [ "$STATUS" = "ERROR" ]; then
+              echo "::error::Instagram informó un error"
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "::error::Instagram agotó el tiempo de procesamiento"
           exit 1
-        fi
 
-        sleep 15
-      done
-
-      echo "::error::Instagram agotó el tiempo de procesamiento"
-      exit 1
-
-  - name: Publicar Reel
-    timeout-minutes: 5
-    env:
-      IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
-      IG_USER_ID: "17841424470871658"
-      CREATION_ID: ${{ steps.reel.outputs.id }}
-    shell: bash
-    run: |
-      set -e
-
-      RESPONSE=$(curl -sS \
-        --connect-timeout 30 \
-        --max-time 180 \
-        -X POST \
-        --data-urlencode "creation_id=$CREATION_ID" \
-        --data-urlencode "access_token=$IG_TOKEN" \
-        "https://graph.instagram.com/v23.0/$IG_USER_ID/media_publish")
-
-      echo "$RESPONSE"
-
-      ID=$(python -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' <<< "$RESPONSE")
-
-      test -n "$ID" || { echo "::error::Instagram no confirmó la publicación"; exit 1; }
-
-      echo "Reel publicado correctamente: $ID"
+      - name: Publicar Reel documental
+        timeout-minutes: 5
+        env:
+          IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          IG_USER_ID: "17841424470871658"
+          CREATION_ID: ${{ steps.reel.outputs.id }}
+        shell: bash
+        run: |
+          set -e
+          RESPONSE=$(curl -sS --connect-timeout 30 --max-time 180 -X POST \
+            --data-urlencode "creation_id=$CREATION_ID" \
+            --data-urlencode "access_token=$IG_TOKEN" \
+            "https://graph.instagram.com/v23.0/$IG_USER_ID/media_publish")
+          echo "$RESPONSE"
+          ID=$(python -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' <<< "$RESPONSE")
+          test -n "$ID" || { echo "::error::Instagram no confirmó la publicación"; exit 1; }
+          echo "Reel publicado correctamente: $ID"
