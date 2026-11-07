@@ -1,5 +1,5 @@
 
-name: Daily AI Tools Short
+name: Daily Spanish Short
 
 on:
   schedule:
@@ -20,7 +20,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Choose today's AI topic
+      - name: Choose today's real story or unexplained event
         id: topic
         shell: bash
         run: |
