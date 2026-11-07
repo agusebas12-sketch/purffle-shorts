@@ -30,26 +30,30 @@ jobs:
         shell: bash
         run: |
           topics=(
-            "Cómo aprovechar ChatGPT para trabajar y estudiar mejor"
-            "Trucos útiles de Android que mucha gente desconoce"
-            "Herramientas gratuitas de inteligencia artificial"
-            "Cómo crear imágenes con inteligencia artificial"
-            "Funciones de ChatGPT que ahorran tiempo"
-            "Cómo proteger tu móvil de aplicaciones peligrosas"
-            "Aplicaciones gratuitas que merece la pena conocer"
-            "Cómo automatizar tareas repetitivas con IA"
-            "Trucos para mejorar la seguridad de tus cuentas"
-            "Cómo usar la inteligencia artificial para aprender"
-            "Herramientas de IA para crear vídeos desde el móvil"
-            "Cómo detectar imágenes y vídeos falsos creados con IA"
-            "Funciones ocultas de Google que pueden ayudarte"
-            "Cómo mejorar la privacidad de tu teléfono Android"
-            "Trucos para sacar más partido a WhatsApp"
-            "Cómo crear textos profesionales con inteligencia artificial"
-            "Herramientas gratuitas para editar vídeos desde Android"
-            "Cómo organizar tu trabajo usando ChatGPT"
-            "Errores que debes evitar al usar inteligencia artificial"
-            "Novedades tecnológicas explicadas de forma sencilla"
+            "Documental: el vuelo MH370 y la búsqueda que continúa"
+            "Documental: el misterio del Mary Celeste, barco encontrado sin tripulación"
+            "Documental: el paso Dyatlov, reconstrucción de los hechos"
+            "Documental: Amelia Earhart y su último vuelo"
+            "Documental: D. B. Cooper, el secuestro aéreo sin resolver"
+            "Documental: la expedición Franklin y el destino de sus barcos"
+            "Documental: la colonia perdida de Roanoke"
+            "Documental: el faro de Flannan y sus tres fareros desaparecidos"
+            "Documental: la señal Wow y la búsqueda de vida extraterrestre"
+            "Documental: Tunguska, la explosión que arrasó un bosque"
+            "Documental: los niños Sodder y la desaparición que marcó a una familia"
+            "Documental: el zumbido de Taos y sus posibles explicaciones"
+            "Historia real: los 33 mineros de Chile y 69 días bajo tierra"
+            "Historia real: Juliane Koepcke, la joven que cayó de un avión y sobrevivió"
+            "Historia real: la tragedia de los Andes y la lucha por sobrevivir"
+            "Historia real: Shackleton y la expedición Endurance en la Antártida"
+            "Historia real: Apollo 13 y cómo evitaron una tragedia en el espacio"
+            "Historia real: Poon Lim y 133 días perdido en el océano"
+            "Historia real: Harrison Okene y el rescate bajo el mar"
+            "Historia real: Aron Ralston y su supervivencia en un cañón"
+            "Documental: la erupción del Vesubio y la destrucción de Pompeya"
+            "Documental: el desastre del Hindenburg y las investigaciones"
+            "Historia real: el rescate de los supervivientes de la cueva Tham Luang"
+            "Documental: el incendio del dirigible LZ 129 y sus consecuencias"
           )
 
           hour=$(TZ=Europe/Madrid date +%H)
@@ -122,7 +126,7 @@ jobs:
             exit 1
           }
 
-      - name: Generar y publicar vídeo tecnológico horizontal
+      - name: Generar y publicar documental o historia real horizontal
         if: steps.topic.outputs.run == 'true'
         shell: bash
         env:
@@ -139,7 +143,7 @@ jobs:
             echo "Intento $intento de 3"
 
             if purffle-shorts make \
-              --style explainer \
+              --style story \
               --lang es \
               --duration 172 \
               --aspect 16:9 \
@@ -164,7 +168,7 @@ jobs:
         if: always() && steps.topic.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: video-tecnologia-${{ github.run_number }}
+          name: video-historias-reales-${{ github.run_number }}
           path: output_videos/**/*.mp4
           if-no-files-found: warn
           retention-days: 7
