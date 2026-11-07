@@ -22,7 +22,7 @@ steps:
     if: github.event_name == 'workflow_run'
     uses: actions/download-artifact@v4
     with:
-      name: video-tecnologia-${{ github.event.workflow_run.run_number }}
+      name: video-historias-reales-${{ github.event.workflow_run.run_number }}
       repository: agusebas12-sketch/purffle-shorts
       run-id: ${{ github.event.workflow_run.id }}
       github-token: ${{ secrets.GITHUB_TOKEN }}
