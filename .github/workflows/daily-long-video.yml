@@ -1,5 +1,5 @@
 
-name: Daily Long Tech and AI Video
+name: Daily Real Stories Documentary
 
 on:
   workflow_dispatch:
@@ -25,7 +25,7 @@ jobs:
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
 
     steps:
-      - name: Elegir tema de tecnología e IA
+      - name: Elegir tema de historia real o documental
         id: topic
         shell: bash
         run: |
@@ -126,7 +126,7 @@ jobs:
             exit 1
           }
 
-      - name: Generar y publicar documental o historia real horizontal
+      - name: Generar y publicar documental de historia real
         if: steps.topic.outputs.run == 'true'
         shell: bash
         env:
