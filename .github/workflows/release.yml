@@ -65,7 +65,7 @@ jobs:
       - name: Wait until PyPI serves this version
         run: |
           V="${GITHUB_REF_NAME#v}"
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             curl -sf "https://pypi.org/pypi/purffle-shorts/${V}/json" > /dev/null && exit 0
             sleep 10
           done
