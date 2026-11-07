@@ -4,7 +4,7 @@ name: Instagram Daily
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Daily AI Tools Short"]
+    workflows: ["Daily Spanish Short"]
     types: [completed]
     branches: [main]
 
@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Seleccionar el Short correcto
+      - name: Seleccionar el Short de historias reales
         id: latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -120,7 +120,7 @@ jobs:
             -X POST \
             --data-urlencode "media_type=REELS" \
             --data-urlencode "video_url=$VIDEO_URL" \
-            --data-urlencode "caption=Un misterio que todavía sorprende. ¿Qué opinas? #misterios #curiosidades #shorts" \
+            --data-urlencode "caption=Historias reales, sucesos inexplicables y misterios documentados. ¿Cuál te sorprendió más? #historiasreales #sucesosinexplicables #misterios #shorts" \
             --data-urlencode "access_token=$IG_TOKEN" \
             "https://graph.instagram.com/v23.0/$IG_USER_ID/media")
 
