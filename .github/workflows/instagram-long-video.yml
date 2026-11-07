@@ -108,7 +108,7 @@ steps:
         -X POST \
         --data-urlencode "media_type=REELS" \
         --data-urlencode "video_url=$VIDEO_URL" \
-        --data-urlencode "caption=Trucos de tecnología e inteligencia artificial que pueden facilitarte la vida. ¿Cuál conocías? #tecnologia #inteligenciaartificial #IA #ChatGPT #Android" \
+        --data-urlencode "caption=Historias reales que parecen increíbles, misterios documentados y documentales que invitan a descubrir qué ocurrió. ¿Cuál te sorprendió más? #historiasreales #documentales #misterios #historia" \
         --data-urlencode "access_token=$IG_TOKEN" \
         "https://graph.instagram.com/v23.0/$IG_USER_ID/media")
 
