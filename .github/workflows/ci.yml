@@ -56,3 +56,10 @@ jobs:
           pip install build twine
           python -m build
           twine check --strict dist/*
+
+  workflow-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate GitHub Actions workflows
+        uses: rhysd/actionlint@v1.7.7
