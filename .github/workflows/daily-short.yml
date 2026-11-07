@@ -25,26 +25,30 @@ jobs:
         shell: bash
         run: |
           topics=(
-            "herramientas de IA gratuitas"
-            "trucos poco conocidos de ChatGPT"
-            "IA para crear imágenes"
-            "IA para editar vídeos desde el móvil"
-            "herramientas de IA para estudiar"
-            "IA para mejorar fotografías"
-            "prompts útiles para ChatGPT"
-            "IA para resumir documentos"
-            "herramientas de IA para trabajar"
-            "IA para crear presentaciones"
-            "aplicaciones de IA para Android"
-            "IA para generar música"
-            "herramientas de IA para redes sociales"
-            "trucos para obtener mejores respuestas de ChatGPT"
-            "IA para traducir idiomas"
-            "herramientas de IA para organizar tareas"
-            "IA para crear logos y diseños"
-            "automatizaciones sencillas con IA"
-            "IA para transcribir audio"
-            "nuevas herramientas de inteligencia artificial"
+            "La desaparición del vuelo MH370: qué se sabe realmente"
+            "El misterio del barco Mary Celeste"
+            "La señal Wow: la extraña señal captada desde el espacio"
+            "El paso Dyatlov: los hechos y las teorías"
+            "El caso de D. B. Cooper y el salto sin resolver"
+            "La desaparición de Amelia Earhart"
+            "El incidente del faro de las islas Flannan"
+            "El sonido inexplicable conocido como el zumbido de Taos"
+            "El evento de Tunguska de 1908"
+            "El mensaje de radio que interrumpió una emisión en 1977"
+            "La historia real de los niños Sodder"
+            "El misterio de la colonia perdida de Roanoke"
+            "La expedición Franklin atrapada en el Ártico"
+            "El rescate de los 33 mineros de Chile"
+            "Juliane Koepcke: sobrevivir a una caída desde un avión"
+            "La supervivencia de los Andes en 1972"
+            "Aron Ralston: sobrevivir atrapado en un cañón"
+            "Poon Lim: 133 días a la deriva en el océano"
+            "Harrison Okene: sobrevivir bajo el mar"
+            "Tsutomu Yamaguchi: sobrevivir a dos bombas atómicas"
+            "La erupción del Vesubio y la ciudad de Pompeya"
+            "La expedición de Shackleton y la supervivencia en la Antártida"
+            "El rescate de Apollo 13: una misión al límite"
+            "La historia real del desastre del dirigible Hindenburg"
           )
 
           day=$(date -u +%j)
@@ -89,14 +93,14 @@ jobs:
       - name: Install PurffleShorts
         run: python -m pip install .
 
-      - name: Generate and upload Spanish AI Short
+      - name: Generate and upload Spanish real-story Short
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           LLM_PROVIDER: gemini
           LLM_MODEL: gemini-3.5-flash-lite
           LANGUAGE: es
-          SCRIPT_STYLE: facts
+          SCRIPT_STYLE: story
           TARGET_SECONDS: "40"
           CAPTION_STYLE: bold
           VISUAL_SOURCES: pixabay-photos
@@ -107,7 +111,7 @@ jobs:
           KEEP_VIDEOS: "true"
         run: |
           purffle-shorts make \
-            --style facts \
+            --style story \
             --lang es \
             --duration 40 \
             --caption-style bold \
