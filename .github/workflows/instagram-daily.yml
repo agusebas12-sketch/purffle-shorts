@@ -145,7 +145,7 @@ jobs:
         run: |
           set -e
 
-          for i in $(seq 1 20); do
+          for _ in $(seq 1 20); do
             RESPONSE=$(curl -sS --connect-timeout 20 --max-time 60 -G \
               --data-urlencode "fields=status_code" \
               --data-urlencode "access_token=$IG_TOKEN" \
