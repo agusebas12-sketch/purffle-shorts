@@ -13,21 +13,72 @@ permissions:
 
 jobs:
   publicar-reel:
-    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
+      - name: Localizar una ejecución con documental disponible
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACT=""
+          RUN_ID=""
+          RUN_NUMBER=""
+
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            CANDIDATES="$EVENT_RUN_ID $EVENT_RUN_NUMBER"
+          else
+            CANDIDATES=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/daily-long-video.yml/runs?status=success&per_page=20" \
+              --jq '.workflow_runs[] | "\(.id) \(.run_number)"')
+          fi
+
+          while read -r ID NUMBER; do
+            [ -n "${ID:-}" ] || continue
+            NAME="video-historias-reales-$NUMBER"
+            ARTIFACT_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ID/artifacts" \
+              --jq --arg name "$NAME" '.artifacts[] | select(.name == $name and .expired == false) | .id' | head -n 1 || true)
+            if [ -n "$ARTIFACT_ID" ]; then
+              RUN_ID="$ID"
+              RUN_NUMBER="$NUMBER"
+              ARTIFACT="$NAME"
+              break
+            fi
+            if [ "$EVENT_NAME" = "workflow_run" ]; then
+              break
+            fi
+          done <<< "$CANDIDATES"
+
+          if [ -z "$ARTIFACT" ]; then
+            echo "has_artifact=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Esta ejecución no generó un documental descargable. No se intentará publicar."
+            exit 0
+          fi
+
+          echo "has_artifact=true" >> "$GITHUB_OUTPUT"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "run_number=$RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "artifact=$ARTIFACT" >> "$GITHUB_OUTPUT"
+          echo "Documental localizado: $ARTIFACT (run $RUN_ID)."
+
       - name: Descargar documental de YouTube
+        if: steps.source.outputs.has_artifact == 'true'
         uses: actions/download-artifact@v4
         with:
-          name: video-historias-reales-${{ github.event.workflow_run.run_number }}
+          name: ${{ steps.source.outputs.artifact }}
           repository: agusebas12-sketch/purffle-shorts
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ steps.source.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: video
 
       - name: Buscar y comprobar vídeo
+        if: steps.source.outputs.has_artifact == 'true'
         id: video
         shell: bash
         run: |
@@ -42,6 +93,7 @@ jobs:
           ls -lh "$VIDEO"
 
       - name: Subir vídeo a Cloudinary
+        if: steps.source.outputs.has_artifact == 'true'
         id: cloudinary
         timeout-minutes: 8
         env:
@@ -74,6 +126,7 @@ jobs:
           echo "Vídeo subido correctamente."
 
       - name: Crear Reel documental en Instagram
+        if: steps.source.outputs.has_artifact == 'true'
         id: reel
         timeout-minutes: 5
         env:
@@ -96,6 +149,7 @@ jobs:
           echo "id=$ID" >> "$GITHUB_OUTPUT"
 
       - name: Esperar procesamiento de Instagram
+        if: steps.source.outputs.has_artifact == 'true'
         timeout-minutes: 8
         env:
           IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
@@ -121,6 +175,7 @@ jobs:
           exit 1
 
       - name: Publicar Reel documental
+        if: steps.source.outputs.has_artifact == 'true'
         timeout-minutes: 5
         env:
           IG_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
