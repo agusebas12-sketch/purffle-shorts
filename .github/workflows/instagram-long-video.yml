@@ -43,7 +43,7 @@ jobs:
             [ -n "${ID:-}" ] || continue
             NAME="video-historias-reales-$NUMBER"
             ARTIFACT_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ID/artifacts" \
-              --jq --arg name "$NAME" '.artifacts[] | select(.name == $name and .expired == false) | .id' | head -n 1 || true)
+              --jq ".artifacts[] | select(.name == \"$NAME\" and .expired == false) | .id" | head -n 1 || true)
             if [ -n "$ARTIFACT_ID" ]; then
               RUN_ID="$ID"
               RUN_NUMBER="$NUMBER"
