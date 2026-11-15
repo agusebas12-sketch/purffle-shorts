@@ -4,7 +4,7 @@ info:
   version: 1.0.0
   description: Starts only the approved YouTube workflows in the Purffle Shorts repository. Instagram follows automatically; TikTok is not exposed.
 servers:
-  - url: https://YOUR-RENDER-SERVICE.onrender.com
+  - url: https://purffle-actions-dispatcher.onrender.com
 paths:
   /health:
     get:
