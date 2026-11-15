@@ -505,12 +505,10 @@ def render_clip(settings: Settings, source: Path, plan: ClipPlan, words: list[Wo
                   for w in words if plan.start - 0.05 <= w.start < plan.end]
     keep = keep_ranges(clip_words, dur, F, max_pause=s.clip_max_pause) if s.clip_jump_cuts else [(0.0, dur)]
     cut = len(keep) > 1 or keep[0] != (0.0, dur)
-    picked, sound = "", ""
+    picked = ""
     if cut:
         expr = select_expr(keep, F)
         picked = f",select='{expr}',setpts=N/({F}*TB)"
-        # audio frames exactly one video frame long, so both are kept or dropped together
-        sound = f"asetnsamples=n={round(48000 / F)}:p=0,aselect='{expr}',asetpts=N/SR/TB,"
         clip_words = retime(clip_words, keep)
         new_dur = round(sum(b - a for a, b in keep), 3)
         log.info("Jump cuts: %d cut(s), %.1fs -> %.1fs", len(keep) - 1 + (keep[0][0] > 0), dur, new_dur)
@@ -521,9 +519,20 @@ def render_clip(settings: Settings, source: Path, plan: ClipPlan, words: list[Wo
                 "-vf", f"{crop_filter(s, crop, face)},fps={F}{picked}{zoom}", *_encode_args(s, final=False),
                 "-frames:v", str(max(2, round(dur * F))), str(seg)], label="clip video")
     voice = work / "voice.wav"
-    ffmpeg.run(["-ss", f"{plan.start:.3f}", "-i", str(source), "-t", f"{plan.duration + 0.25:.3f}", "-vn",
-                "-af", f"aresample=48000,{sound}aformat=channel_layouts=mono", "-ar", "48000", str(voice)],
-               label="clip audio")
+    audio_input = ["-ss", f"{plan.start:.3f}", "-i", str(source), "-t", f"{plan.duration + 0.25:.3f}"]
+    if cut:
+        # Trim each kept audio interval independently, reset timestamps, then concatenate.
+        # This avoids variable-sized decoded audio frames drifting against video-frame cuts.
+        labels = [f"part{i}" for i in range(len(keep))]
+        graph = [f"[0:a]aresample=48000,asplit={len(keep)}" + "".join(f"[{label}]" for label in labels)]
+        for i, (start, end) in enumerate(keep):
+            graph.append(f"[{labels[i]}]atrim=start={start:.6f}:end={end:.6f},asetpts=PTS-STARTPTS[a{i}]")
+        graph.append("".join(f"[a{i}]" for i in range(len(keep))) +
+                     f"concat=n={len(keep)}:v=0:a=1,aformat=channel_layouts=mono[outa]")
+        audio_args = ["-filter_complex", ";".join(graph), "-map", "[outa]"]
+    else:
+        audio_args = ["-vn", "-af", "aresample=48000,aformat=channel_layouts=mono"]
+    ffmpeg.run([*audio_input, *audio_args, "-ar", "48000", str(voice)], label="clip audio")
     chunks = caption_chunks(clip_words, s.caption_max_words, total=dur)
     overlay = build_overlays(s, chunks, dur, plan.hook_text, work)
     video = folder / ("short.mp4" if s.vertical else "video.mp4")
