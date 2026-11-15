@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: purffle-github-actions-dispatcher
+    runtime: node
+    rootDir: github-actions-dispatcher
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: DISPATCH_API_KEY
+        generateValue: true
