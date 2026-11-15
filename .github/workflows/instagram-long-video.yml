@@ -33,7 +33,7 @@ jobs:
           RUN_NUMBER=""
 
           if [ "$EVENT_NAME" = "workflow_run" ]; then
-            CANDIDATES="$EVENT_RUN_ID $EVENT_RUN_NUMBER"
+            CANDIDATES=$(printf '%s %s\n' "$EVENT_RUN_ID" "$EVENT_RUN_NUMBER")
           else
             CANDIDATES=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/daily-long-video.yml/runs?status=success&per_page=20" \
               --jq '.workflow_runs[] | "\(.id) \(.run_number)"')
@@ -43,7 +43,7 @@ jobs:
             [ -n "${ID:-}" ] || continue
             NAME="video-historias-reales-$NUMBER"
             ARTIFACT_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ID/artifacts" \
-              --jq --arg name "$NAME" '.artifacts[] | select(.name == $name and .expired == false) | .id' | head -n 1 || true)
+              | jq -r --arg name "$NAME" '[.artifacts[]? | select(.name == $name and .expired == false)][0].id // empty')
             if [ -n "$ARTIFACT_ID" ]; then
               RUN_ID="$ID"
               RUN_NUMBER="$NUMBER"
@@ -57,8 +57,8 @@ jobs:
 
           if [ -z "$ARTIFACT" ]; then
             echo "has_artifact=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Esta ejecución no generó un documental descargable. No se intentará publicar."
-            exit 0
+            echo "::error::No se encontró el artefacto del documental de la ejecución de YouTube. No se publicará un vídeo antiguo."
+            exit 1
           fi
 
           echo "has_artifact=true" >> "$GITHUB_OUTPUT"
