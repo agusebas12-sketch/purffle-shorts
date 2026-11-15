@@ -12,6 +12,7 @@ provides them, otherwise from an aligner or an estimate) so captions land exactl
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -105,14 +106,25 @@ def _edge(text: str, out: Path, settings: Settings) -> tuple[Path, list[Word], s
         log.info("edge-tts request started: voice=%s, chars=%d", voice, len(text))
         comm = edge_tts.Communicate(text, voice, rate=settings.tts_rate, boundary="WordBoundary",
                                     receive_timeout=60)
-        with open(path, "wb") as f:
-            for chunk in comm.stream_sync():
-                if chunk["type"] == "audio":
-                    f.write(chunk["data"])
-                    audio_chunks += 1
-                elif chunk["type"] == "WordBoundary":
-                    start = chunk["offset"] / 1e7
-                    words.append(Word(chunk["text"], start, start + chunk["duration"] / 1e7))
+
+        async def _collect():
+            nonlocal audio_chunks
+            with open(path, "wb") as f:
+                async for chunk in comm.stream():
+                    if chunk["type"] == "audio":
+                        f.write(chunk["data"])
+                        audio_chunks += 1
+                    elif chunk["type"] == "WordBoundary":
+                        start = chunk["offset"] / 1e7
+                        words.append(Word(chunk["text"], start, start + chunk["duration"] / 1e7))
+
+        try:
+            # receive_timeout limits individual websocket receives; this caps the entire
+            # request too, so a stalled stream cannot consume the whole Actions job.
+            asyncio.run(asyncio.wait_for(_collect(), timeout=150))
+        except asyncio.TimeoutError as exc:
+            path.unlink(missing_ok=True)
+            raise TimeoutError("edge-tts exceeded its 150-second total request deadline") from exc
         size = path.stat().st_size
         if size == 0:
             raise RuntimeError("edge-tts returned no audio")
