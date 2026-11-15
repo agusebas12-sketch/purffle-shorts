@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import wave
 from dataclasses import dataclass
 from pathlib import Path
@@ -98,18 +99,25 @@ def _edge(text: str, out: Path, settings: Settings) -> tuple[Path, list[Word], s
     path = out / "voice.mp3"
 
     def _do():
+        started = time.monotonic()
         words: list[Word] = []
+        audio_chunks = 0
+        log.info("edge-tts request started: voice=%s, chars=%d", voice, len(text))
         comm = edge_tts.Communicate(text, voice, rate=settings.tts_rate, boundary="WordBoundary",
                                     receive_timeout=60)
         with open(path, "wb") as f:
             for chunk in comm.stream_sync():
                 if chunk["type"] == "audio":
                     f.write(chunk["data"])
+                    audio_chunks += 1
                 elif chunk["type"] == "WordBoundary":
                     start = chunk["offset"] / 1e7
                     words.append(Word(chunk["text"], start, start + chunk["duration"] / 1e7))
-        if path.stat().st_size == 0:
+        size = path.stat().st_size
+        if size == 0:
             raise RuntimeError("edge-tts returned no audio")
+        log.info("edge-tts request completed: voice=%s, audio_chunks=%d, bytes=%d, words=%d, elapsed=%.1fs",
+                 voice, audio_chunks, size, len(words), time.monotonic() - started)
         return words
 
     words = with_retries(_do, attempts=3, label=f"edge-tts {voice}")

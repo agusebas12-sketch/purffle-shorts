@@ -390,7 +390,13 @@ class Studio:
         (folder / "script.json").write_text(json.dumps(script.to_dict(), indent=2, ensure_ascii=False))
         try:
             self._step("voice", f"{s.tts_engine} voice")
+            voice_started = time.monotonic()
+            narration_chars = sum(len(sc.narration) for sc in script.scenes)
+            log.info("Voice stage started: engine=%s, scenes=%d, narration_chars=%d",
+                     s.tts_engine, len(script.scenes), narration_chars)
             speech = self._speak(script, work, s)
+            log.info("Voice stage completed: engine=%s, duration=%.1fs, elapsed=%.1fs",
+                     speech.engine, speech.duration, time.monotonic() - voice_started)
             total = round(speech.duration + END_PAD, 3)
             chat = script.style == "chat"
             timeline = scene_timeline([sc.narration for sc in script.scenes], speech.words, total, s.language,
