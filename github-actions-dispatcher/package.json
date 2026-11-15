@@ -1,0 +1,16 @@
+{
+  "name": "purffle-github-actions-dispatcher",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Authenticated, allowlisted dispatcher for Purffle Shorts GitHub Actions",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "4.21.2"
+  }
+}
