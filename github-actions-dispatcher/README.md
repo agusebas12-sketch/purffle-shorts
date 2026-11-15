@@ -19,7 +19,7 @@ Create a **new Web Service** from this repository:
 
 - Root Directory: `github-actions-dispatcher`
 - Runtime: Node
-- Build Command: `npm ci`
+- Build Command: `npm install`
 - Start Command: `npm start`
 - Health Check Path: `/health`
 
