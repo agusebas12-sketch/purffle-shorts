@@ -180,7 +180,7 @@ jobs:
             exit 1
           fi
 
-          HISTORY_ID=$(purffle-shorts history --limit 1 | awk 'NR == 3 {print $1}')
+          HISTORY_ID=$(purffle-shorts history --limit 1 | awk 'NR == 2 {print $1}')
           if ! [[ "$HISTORY_ID" =~ ^[0-9]+$ ]]; then
             echo "::error::No se pudo identificar el registro del documental validado."
             exit 1
