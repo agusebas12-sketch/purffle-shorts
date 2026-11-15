@@ -139,30 +139,56 @@ jobs:
           set -e
           mkdir -p output_videos
 
+          VALID_VIDEO=""
+
           for intento in 1 2 3; do
             echo "Intento $intento de 3"
-
+            rm -rf output_videos/*
+            
             if purffle-shorts make \
               --style story \
               --lang es \
-              --duration 172 \
+              --duration 170 \
               --aspect 16:9 \
               --visuals pixabay \
+              --no-upload \
               --verbose \
               --topic "${{ steps.topic.outputs.topic }}"; then
 
-              echo "Generación y publicación completadas."
-              exit 0
+              VIDEO=$(find output_videos -type f -name '*.mp4' -print -quit)
+              if [ -n "$VIDEO" ]; then
+                DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$VIDEO")
+                echo "Duración generada: ${DURATION}s"
+                if awk -v d="$DURATION" 'BEGIN { exit !(d >= 150) }'; then
+                  VALID_VIDEO="$VIDEO"
+                  break
+                fi
+                echo "::warning::El documental quedó por debajo de 150 segundos; no se publicará y se intentará generar otro."
+              else
+                echo "::warning::No se encontró ningún MP4 generado."
+              fi
             fi
 
             if [ "$intento" -lt 3 ]; then
-              echo "Esperando 60 segundos..."
+              echo "Esperando 60 segundos antes del siguiente intento..."
               sleep 60
             fi
           done
 
-          echo "ERROR: fallaron los tres intentos."
-          exit 1
+          if [ -z "$VALID_VIDEO" ]; then
+            echo "::error::No se pudo generar un documental de al menos 150 segundos después de tres intentos. No se publicará."
+            exit 1
+          fi
+
+          HISTORY_ID=$(purffle-shorts history --limit 1 | awk 'NR == 3 {print $1}')
+          if ! [[ "$HISTORY_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::No se pudo identificar el registro del documental validado."
+            exit 1
+          fi
+
+          echo "Documental validado (${DURATION}s). Publicando registro #$HISTORY_ID en YouTube."
+          purffle-shorts upload --id "$HISTORY_ID"
+          echo "Generación, validación y publicación completadas."
 
       - name: Guardar vídeo generado
         if: always() && steps.topic.outputs.run == 'true'
