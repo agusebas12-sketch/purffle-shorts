@@ -56,15 +56,19 @@ jobs:
           done <<< "$CANDIDATES"
 
           if [ -z "$ARTIFACT" ]; then
-            echo "has_artifact=false" >> "$GITHUB_OUTPUT"
-            echo "::error::No se encontró el artefacto del documental de la ejecución de YouTube. No se publicará un vídeo antiguo."
-            exit 1
+            {
+              echo "has_artifact=false"
+            } >> "$GITHUB_OUTPUT"
+            echo "::notice::Esta ejecución no generó un documental descargable. No se intentará publicar."
+            exit 0
           fi
 
-          echo "has_artifact=true" >> "$GITHUB_OUTPUT"
-          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-          echo "run_number=$RUN_NUMBER" >> "$GITHUB_OUTPUT"
-          echo "artifact=$ARTIFACT" >> "$GITHUB_OUTPUT"
+          {
+            echo "has_artifact=true"
+            echo "run_id=$RUN_ID"
+            echo "run_number=$RUN_NUMBER"
+            echo "artifact=$ARTIFACT"
+          } >> "$GITHUB_OUTPUT"
           echo "Documental localizado: $ARTIFACT (run $RUN_ID)."
 
       - name: Descargar documental de YouTube
